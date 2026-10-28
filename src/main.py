@@ -273,6 +273,11 @@ class HoloHandApp(ShowBase):
             self.nav_buttons["DRUMS"].show()
             self.nav_buttons["HOME"].hide()
 
+        elif self.mode == "PIANO":
+            self.nav_buttons["PIANO"].hide()
+            self.nav_buttons["DRUMS"].hide()
+            self.nav_buttons["HOME"].hide()  # Piano workstation hosts its own professional dock
+
         else:
             self.nav_buttons["PIANO"].hide()
             self.nav_buttons["DRUMS"].hide()
