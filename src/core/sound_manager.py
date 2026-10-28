@@ -46,7 +46,7 @@ class SoundManager:
     # PIANO SOUND SYNTHESIS
     # ================================================================
 
-    def _piano_tone_samples(self, frequency, duration=0.9, sample_rate=44100):
+    def _piano_tone_samples(self, frequency, duration=1.6, sample_rate=44100):
         """
         Generates a realistic piano-like tone with multiple harmonics
         and a natural decay envelope. Returns raw PCM bytes (stereo 16-bit).
@@ -60,22 +60,22 @@ class SoundManager:
         for i in range(total_samples):
             t = i / sample_rate
 
-            # Multi-harmonic piano model
+            # Multi-harmonic acoustic piano model
             fundamental = math.sin(2 * math.pi * frequency * t)
-            h2 = 0.40 * math.sin(2 * math.pi * frequency * 2 * t)
-            h3 = 0.18 * math.sin(2 * math.pi * frequency * 3 * t)
-            h4 = 0.09 * math.sin(2 * math.pi * frequency * 4 * t)
-            h5 = 0.04 * math.sin(2 * math.pi * frequency * 5 * t)
+            h2 = 0.45 * math.sin(2 * math.pi * frequency * 2 * t)
+            h3 = 0.22 * math.sin(2 * math.pi * frequency * 3 * t)
+            h4 = 0.12 * math.sin(2 * math.pi * frequency * 4 * t)
+            h5 = 0.05 * math.sin(2 * math.pi * frequency * 5 * t)
 
             value = fundamental + h2 + h3 + h4 + h5
 
-            # Envelope: fast attack + exponential decay
+            # Warm exponential decay envelope
             if i < attack_samples:
                 env = i / attack_samples
             else:
-                env = math.exp(-4.2 * (t - attack) / duration)
+                env = math.exp(-2.8 * (t - attack) / duration)
 
-            sample = int(9500 * value * env)
+            sample = int(10500 * value * env)
             sample = max(-32767, min(32767, sample))
             frames.append(struct.pack("<hh", sample, sample))
 
@@ -214,16 +214,18 @@ class SoundManager:
     def play_piano(self, note):
         """
         Plays a piano note. note can be: C, D, E, F, G, A, B, C5,
-        Cs (C#), Ds (D#), Fs (F#), Gs (G#), As (A#)
+        Cs (C#), Ds (D#), Fs (F#), Gs (G#), As (A#).
+        Returns the active pygame Channel object or None.
         """
         if not self.audio_ready:
-            return
+            return None
         sound = self.piano_sounds.get(note)
         if sound:
             try:
-                sound.play()
+                return sound.play()
             except Exception as e:
                 print("Piano playback error:", e)
+        return None
 
     def play_drum(self, drum):
         """
