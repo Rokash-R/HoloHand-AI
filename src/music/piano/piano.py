@@ -30,16 +30,27 @@ class Piano:
         self.sound_manager = sound_manager
         self.active = False
 
-        self.pinch_down = False
+        # Playing modes: "AIR_KEYBOARD" (default) or "PINCH"
+        self.play_mode = "AIR_KEYBOARD"
+        self.gesture_input_enabled = True
+
+        # Per-hand tracking state (supports Hand 0 and Hand 1 independently)
+        self.max_hands = 2
+        self.cursors = [None, None]
+        self.current_keys = [None, None]
+        self.candidate_keys = [None, None]
+        self.candidate_times = [0.0, 0.0]
+        self.pinch_downs = [False, False]
+        self.last_actions = [0.0, 0.0]
+        self.last_valid_targets = [None, None]
+
+        # Timing and detection thresholds
+        self.key_dwell_time = 0.025   # 25ms anti-jitter dwell for air-keyboard
         self.pinch_on = 0.32
         self.pinch_off = 0.45
-        self.last_action = 0.0
-        self.action_cooldown = 0.20
-        self.last_valid_target = None
+        self.action_cooldown = 0.18
 
-        self.cursor = None
         self.pointer_nodes = []
-        self.target = None
         self.track_channel = None
 
         self.white_frames = {}
@@ -60,8 +71,8 @@ class Piano:
         self.music_panel()
 
         self.status = self.label(
-            "POINT TO PREVIEW - PINCH TO PLAY",
-            0, -0.84, 0.028,
+            "AIR-KEYBOARD: HOVER KEYS TO PLAY | [M] PINCH MODE | [SPACE] MUTE",
+            0, -0.84, 0.026,
             (0.35, 1, 0.8, 1)
         )
 
@@ -106,22 +117,79 @@ class Piano:
         )
 
     # -----------------------------------------
-    # HEADER
+    # HEADER & CONTROLS
     # -----------------------------------------
 
     def header(self):
 
         self.label(
             "HOLOHAND AI - PIANO STUDIO",
-            0, 0.87, 0.055,
+            0, 0.88, 0.052,
             (0.2, 0.95, 1, 1)
         )
 
-        self.label(
-            "LIVE KEYS  |  CHORDS  |  BACKING MUSIC",
-            0, 0.76, 0.026,
+        self.mode_btn = self.button(
+            "MODE: AIR-KEYBOARD",
+            -0.38, 0.74,
+            self.toggle_play_mode
+        )
+
+        self.input_btn = self.button(
+            "INPUT: ACTIVE",
+            0.38, 0.74,
+            self.toggle_gesture_input
+        )
+
+        self.sub_label = self.label(
+            "LIVE AIR-KEYBOARD  |  CHORDS  |  BACKING MUSIC",
+            0, 0.65, 0.024,
             (0.65, 0.8, 1, 1)
         )
+
+    def toggle_play_mode(self):
+
+        if self.play_mode == "AIR_KEYBOARD":
+            self.play_mode = "PINCH"
+        else:
+            self.play_mode = "AIR_KEYBOARD"
+
+        self.current_keys = [None, None]
+        self.candidate_keys = [None, None]
+        self.update_mode_ui()
+
+    def toggle_gesture_input(self):
+
+        self.gesture_input_enabled = not self.gesture_input_enabled
+        self.current_keys = [None, None]
+        self.candidate_keys = [None, None]
+        self.update_mode_ui()
+
+    def update_mode_ui(self):
+
+        if hasattr(self, "mode_btn"):
+            if self.play_mode == "AIR_KEYBOARD":
+                self.mode_btn["text"] = "MODE: AIR-KEYBOARD"
+                self.mode_btn["frameColor"] = (0.02, 0.28, 0.40, 1)
+                self.mode_btn["text_fg"] = (0.3, 1.0, 1.0, 1)
+            else:
+                self.mode_btn["text"] = "MODE: PINCH"
+                self.mode_btn["frameColor"] = (0.30, 0.15, 0.42, 1)
+                self.mode_btn["text_fg"] = (1.0, 0.6, 1.0, 1)
+
+        if hasattr(self, "input_btn"):
+            if self.gesture_input_enabled:
+                self.input_btn["text"] = "INPUT: ACTIVE"
+                self.input_btn["frameColor"] = (0.04, 0.35, 0.22, 1)
+                self.input_btn["text_fg"] = (0.4, 1.0, 0.6, 1)
+            else:
+                self.input_btn["text"] = "INPUT: MUTED"
+                self.input_btn["frameColor"] = (0.38, 0.18, 0.05, 1)
+                self.input_btn["text_fg"] = (1.0, 0.7, 0.3, 1)
+
+        if self.play_mode == "AIR_KEYBOARD":
+            self.status["text"] = "AIR-KEYBOARD: HOVER KEYS TO PLAY | [M] PINCH MODE | [SPACE] MUTE"
+        else:
+            self.status["text"] = "PINCH MODE: HOVER KEY AND PINCH TO PLAY | [M] AIR-KEYBOARD"
 
     # -----------------------------------------
     # CENTRAL KEYBOARD
@@ -469,33 +537,41 @@ class Piano:
 
         return None
 
-    def highlight_target(self, target):
+    def highlight_target(self, target, hand_idx=0):
 
         if target is None:
             return
 
         kind, name = target
 
-        if kind != "note":
+        if kind == "chord":
+            chord_notes = self.CHORDS.get(name, [])
+            for note in chord_notes:
+                self._apply_key_color(note, hand_idx)
             return
 
+        if kind == "note":
+            self._apply_key_color(name, hand_idx)
+
+    def _apply_key_color(self, name, hand_idx=0):
+
+        if hand_idx == 0:
+            white_col = (0.25, 0.95, 1.0, 1)
+            black_col = (0.65, 0.40, 1.0, 1)
+        else:
+            white_col = (1.0, 0.45, 0.85, 1)
+            black_col = (0.90, 0.25, 0.70, 1)
+
         if name in self.white_frames:
-
-            self.white_frames[name]["frameColor"] = (
-                0.25, 0.9, 1, 1
-            )
-
+            self.white_frames[name]["frameColor"] = white_col
         elif name in self.black_frames:
-
-            self.black_frames[name]["frameColor"] = (
-                0.7, 0.35, 1, 1
-            )
+            self.black_frames[name]["frameColor"] = black_col
 
     # -----------------------------------------
     # HAND-CONTROLLED PIANO
     # -----------------------------------------
 
-    def update(self, hand):
+    def update(self, hands):
 
         if not self.active:
             return
@@ -503,101 +579,118 @@ class Piano:
         self.clear_pointers()
         self.reset_keys()
 
-        lm = self.landmarks(hand)
-
-        if lm is None or len(lm) < 21:
-
-            self.cursor = None
-            self.target = None
-            self.pinch_down = False
-            return
-
-        # Index finger controls selection.
-        x, z = self.screen_point(lm[8])
-
-        # Smooth cursor to reduce jitter.
-        if self.cursor is None:
-            self.cursor = (x, z)
-
+        if hands is None:
+            hands_list = []
+        elif isinstance(hands, (list, tuple)):
+            hands_list = [h for h in hands if h is not None]
         else:
-            old_x, old_z = self.cursor
-            alpha = 0.65
+            hands_list = [hands]
 
-            self.cursor = (
-                old_x + (x - old_x) * alpha,
-                old_z + (z - old_z) * alpha
-            )
-
-        cx, cz = self.cursor
-
-        # Cyan pointer = index finger.
-        self.draw_pointer(
-            cx, cz,
-            (0.0, 1.0, 1.0, 1.0)
-        )
-
-        # Purple pointer = middle finger.
-        mx, mz = self.screen_point(lm[12])
-
-        self.draw_pointer(
-            mx, mz,
-            (0.85, 0.4, 1.0, 1.0),
-            radius=0.025
-        )
-
-        self.target = self.find_target(cx, cz)
-
-        if self.target is not None:
-            self.last_valid_target = self.target
-
-        self.highlight_target(self.target)
-
-        if self.target is not None:
-            self.status["text"] = (
-                "SELECTED: " + self.target[1]
-                + "  |  PINCH TO PLAY"
-            )
-
-        # Robust palm scale: combines palm width and wrist-to-knuckle distance
-        scale_a = self.distance(lm[5], lm[17])
-        scale_b = self.distance(lm[0], lm[9]) * 0.5
-        palm_scale = max(scale_a, scale_b)
-
-        if palm_scale < 0.025:
+        if not hands_list:
+            self.cursors = [None, None]
+            self.current_keys = [None, None]
+            self.candidate_keys = [None, None]
+            self.pinch_downs = [False, False]
             return
-
-        pinch_distance = self.distance(
-            lm[4], lm[8]
-        )
-        ratio = pinch_distance / palm_scale
 
         now = time.monotonic()
+        active_statuses = []
 
-        if not self.pinch_down:
+        processed_hands = []
+        for hand in hands_list[:2]:
+            lm = self.landmarks(hand)
+            if lm is not None and len(lm) >= 21:
+                processed_hands.append((hand, lm, lm[8].x))
 
-            if ratio < self.pinch_on:
+        if len(processed_hands) == 2:
+            processed_hands.sort(key=lambda item: item[2])
 
-                self.pinch_down = True
-                active_target = self.target or self.last_valid_target
+        colors = [
+            (0.0, 1.0, 1.0, 1.0),
+            (1.0, 0.3, 0.85, 1.0)
+        ]
 
-                if (
-                    active_target is not None
-                    and now - self.last_action
-                    >= self.action_cooldown
-                ):
+        for h_idx, (hand, lm, _) in enumerate(processed_hands):
+            # Index finger controls selection.
+            x, z = self.screen_point(lm[8])
 
-                    kind, name = active_target
+            if self.cursors[h_idx] is None:
+                self.cursors[h_idx] = (x, z)
+            else:
+                old_x, old_z = self.cursors[h_idx]
+                alpha = 0.70
+                self.cursors[h_idx] = (
+                    old_x + (x - old_x) * alpha,
+                    old_z + (z - old_z) * alpha
+                )
 
-                    if kind == "note":
-                        self.play_note(name)
+            cx, cz = self.cursors[h_idx]
+            self.draw_pointer(cx, cz, colors[h_idx], radius=0.038)
 
-                    elif kind == "chord":
-                        self.play_chord(name)
+            target = self.find_target(cx, cz)
 
-                    self.last_action = now
+            if target is not None:
+                self.highlight_target(target, h_idx)
+                active_statuses.append(f"H{h_idx + 1}: {target[1]}")
 
-        elif ratio > self.pinch_off:
-            self.pinch_down = False
+            if self.play_mode == "AIR_KEYBOARD":
+                if target is not None:
+                    if target != self.current_keys[h_idx]:
+                        if self.candidate_keys[h_idx] != target:
+                            self.candidate_keys[h_idx] = target
+                            self.candidate_times[h_idx] = now
+                        elif now - self.candidate_times[h_idx] >= self.key_dwell_time:
+                            self.current_keys[h_idx] = target
+                            self.last_actions[h_idx] = now
+                            if self.gesture_input_enabled:
+                                kind, name = target
+                                if kind == "note":
+                                    self.play_note(name)
+                                elif kind == "chord":
+                                    self.play_chord(name)
+                    else:
+                        self.candidate_keys[h_idx] = target
+                else:
+                    self.candidate_keys[h_idx] = None
+                    self.current_keys[h_idx] = None
+
+            elif self.play_mode == "PINCH":
+                if target is not None:
+                    self.last_valid_targets[h_idx] = target
+
+                scale_a = self.distance(lm[5], lm[17])
+                scale_b = self.distance(lm[0], lm[9]) * 0.5
+                palm_scale = max(scale_a, scale_b)
+
+                if palm_scale >= 0.025:
+                    pinch_distance = self.distance(lm[4], lm[8])
+                    ratio = pinch_distance / palm_scale
+
+                    if not self.pinch_downs[h_idx]:
+                        if ratio < self.pinch_on:
+                            self.pinch_downs[h_idx] = True
+                            active_target = target or self.last_valid_targets[h_idx]
+                            if (
+                                active_target is not None
+                                and now - self.last_actions[h_idx] >= self.action_cooldown
+                            ):
+                                if self.gesture_input_enabled:
+                                    kind, name = active_target
+                                    if kind == "note":
+                                        self.play_note(name)
+                                    elif kind == "chord":
+                                        self.play_chord(name)
+                                self.last_actions[h_idx] = now
+                    elif ratio > self.pinch_off:
+                        self.pinch_downs[h_idx] = False
+
+        if active_statuses:
+            status_text = "  |  ".join(active_statuses)
+            if not self.gesture_input_enabled:
+                status_text += " [MUTED - PRESS SPACE TO UNMUTE]"
+            self.status["text"] = status_text
+        elif not self.gesture_input_enabled:
+            self.status["text"] = "GESTURE INPUT MUTED [PRESS SPACE TO UNMUTE]"
 
     # -----------------------------------------
     # SHOW / HIDE
@@ -606,15 +699,24 @@ class Piano:
     def show(self):
 
         self.active = True
-        self.cursor = None
-        self.pinch_down = False
+        self.cursors = [None, None]
+        self.current_keys = [None, None]
+        self.candidate_keys = [None, None]
+        self.pinch_downs = [False, False]
+
+        self.base.accept("m", self.toggle_play_mode)
+        self.base.accept("space", self.toggle_gesture_input)
 
         self.frame.show()
         self.pointer_root.show()
+        self.update_mode_ui()
 
     def hide(self):
 
         self.active = False
+        self.base.ignore("m")
+        self.base.ignore("space")
+
         self.frame.hide()
         self.pointer_root.hide()
 
@@ -622,8 +724,10 @@ class Piano:
         self.reset_keys()
         self.stop_track()
 
-        self.cursor = None
-        self.pinch_down = False
+        self.cursors = [None, None]
+        self.current_keys = [None, None]
+        self.candidate_keys = [None, None]
+        self.pinch_downs = [False, False]
 
     def cleanup(self):
 

@@ -572,7 +572,7 @@ class HoloHandApp(ShowBase):
         # -----------------------------------------
         # MUSIC
         # -----------------------------------------
-        self._update_active_mode(primary_hand)
+        self._update_active_mode(detected_hands)
 
         # -----------------------------------------
         # HOME TELEMETRY
@@ -624,13 +624,14 @@ class HoloHandApp(ShowBase):
     # MUSIC UPDATE
     # ========================================================
 
-    def _update_active_mode(self, hand):
+    def _update_active_mode(self, hands):
 
         if self.mode == "PIANO":
-            self.piano_ui.update(hand)
+            self.piano_ui.update(hands)
 
         elif self.mode == "DRUMS":
-            self.drums_ui.update(hand)
+            primary = hands[0] if isinstance(hands, (list, tuple)) and len(hands) > 0 else hands
+            self.drums_ui.update(primary)
 
     # ========================================================
     # EXIT AND CLEANUP
