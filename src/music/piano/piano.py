@@ -8,6 +8,7 @@ import numpy as np
 from direct.gui.DirectGui import (
     DirectFrame, DirectLabel, DirectButton, DGG
 )
+from direct.gui.OnscreenImage import OnscreenImage
 from panda3d.core import TextNode, LineSegs, Vec4, TransparencyAttrib
 
 
@@ -175,6 +176,19 @@ class Piano:
             relief=DGG.FLAT
         )
         self.frame.setBin("fixed", 1)
+
+        # Colorful hand-crafted acoustic studio art backdrop
+        backdrop_path = "assets/studio_background.png"
+        if os.path.exists(backdrop_path):
+            self.backdrop = OnscreenImage(
+                image=backdrop_path,
+                pos=(0, 0, 0),
+                scale=(1.78, 1, 1.0),
+                parent=self.frame
+            )
+            self.backdrop.setBin("fixed", 2)
+            self.backdrop.setDepthTest(False)
+            self.backdrop.setDepthWrite(False)
 
         # Build all workstation sections
         self._build_center_console()
