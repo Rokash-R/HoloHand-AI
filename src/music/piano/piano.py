@@ -17,15 +17,21 @@ class Piano:
 
     Complete Upgrade:
       - 1:1 Visual Match with Reference Workstation Design (Image 2)
+      - Large, high-contrast, bold font sizes across all keyboards and controls
       - Left Panel: HOME button, Major/Minor Tabs, 7 Rich Color Chord Pads, Chord Progression
-      - Center Panel: Controls Bar (Mode, Octave 2-6, Sustain, Volume, Reverb, Note Display),
-                      Real-time Audio Visualizer Screen, 6 Synth Patches (Piano, E.Piano, Organ,
-                      Strings, Pad, Synth), Hardware Knobs, Visual Performance Mode,
-                      Realistic Ivory/Ebony Keys (Z-Order Fixed), Bottom Dock (Piano, Drums, Home)
-      - Right Panel: SETTINGS button (with modal overlay), 8 Distinct Rich Musical Tracks,
-                     Transport Row (Play, Pause, Stop, Mute), Track Volume Slider,
-                     Track Progress Display, Professional Recording System
-      - Gesture Controls: Adaptive mouse-like cursor tracking, Blue (Left) & Pink (Right) glowing
+      - Center Console:
+          * Top: PLAY MODE (Air-Keyboard / Pinch), OCTAVE 2-6 with [-] and [+], SUSTAIN (ON/OFF),
+                 REVERB (ON/OFF), VOLUME %, CURRENT NOTE (Large Box)
+          * Below (Main Keyboard Settings Bay):
+              - Left: SOUND PATCHES (PIANO, E.PIANO, ORGAN, STRINGS, PAD, SYNTH) with large buttons
+              - Center: Blue LCD Spectrum Analyzer Screen (real-time reactive audio display)
+              - Right: KEYBOARD SETTINGS (Piano Volume [-]/[+], Speed Toggle, Visual FX Toggle)
+          * Piano Keyboard: 8 Ivory White Keys + 5 Ebony Black Keys (Z-Order 35, Drop Shadows, Bevels)
+          * Bottom Navigation Dock: PIANO, DRUMS, HOME
+      - Right Panel: SETTINGS button, 8 Distinct Musical Tracks at full 26,000 peak volume,
+                     Transport Row (Play, Pause, Stop, Mute), Track Volume Slider, Progress Timer,
+                     Performance Recording Studio
+      - Gesture Tracking: Adaptive mouse-like velocity smoothing, Blue (Left) & Pink (Right) glowing
                           fingertip pointers, selection ripple feedback, full button hit-testing.
     """
 
@@ -90,10 +96,10 @@ class Piano:
         self.current_patch = "PIANO"
         self.sustain_on = True
         self.reverb_on = False
-        self.piano_volume = 0.85
-        self.track_volume = 0.80
+        self.piano_volume = 0.90
+        self.track_volume = 1.00
         self.is_muted = False
-        self.prev_track_vol = 0.80
+        self.prev_track_vol = 1.00
 
         # Visual Performance Mode
         self.visual_fx_enabled = True
@@ -135,7 +141,6 @@ class Piano:
         self.track_sound = None
         self.track_paused = False
         self.track_start_time = 0.0
-        self.track_pause_time = 0.0
         self.track_total_duration = 8.0
         self.track_name = self.TRACK_FILES[0][0]
 
@@ -159,6 +164,7 @@ class Piano:
         self.black_frames = {}
         self.chord_buttons = {}
         self.track_buttons = []
+        self.patch_buttons = {}
         self.interactive_regions = []
 
         # Master workstation chassis frame (Deep dark background)
@@ -187,13 +193,22 @@ class Piano:
         self.fx_root = base.aspect2d.attachNewNode("PianoVisualFX")
         self.fx_root.setBin("fixed", 110)
 
-        # Load initial backing track
+        # Pre-load initial backing track
         self._load_active_track()
 
         self.hide()
 
+    def _navigate_to(self, mode_name):
+        """Safely navigate to another screen mode in HoloHand."""
+        if hasattr(self.base, 'set_mode'):
+            self.base.set_mode(mode_name)
+        elif hasattr(self.base, 'app') and hasattr(self.base.app, 'set_mode'):
+            self.base.app.set_mode(mode_name)
+        else:
+            print(f"[Piano] Mode navigation: {mode_name}")
+
     # ========================================================
-    # CENTER SYNTHESIZER CONSOLE (MATCHING IMAGE 2 HARDWARE)
+    # CENTER SYNTHESIZER CONSOLE (ALL CONTROLS PROMINENTLY ARRANGED)
     # ========================================================
 
     def _build_center_console(self):
@@ -220,7 +235,6 @@ class Piano:
         )
         self.header_frame.setBin("fixed", 5)
 
-        # Speaker grille louvers on left and right
         for s in range(5):
             DirectFrame(
                 parent=self.header_frame,
@@ -235,7 +249,6 @@ class Piano:
                 frameColor=(0.015, 0.02, 0.03, 1.0)
             )
 
-        # Center embossed branding plate
         DirectLabel(
             parent=self.header_frame,
             text="HOLOHAND  AI",
@@ -258,24 +271,24 @@ class Piano:
             relief=None
         )
 
-        # ── 2. Top Hardware Control Strip ──
+        # ── 2. Top Hardware Control Strip (Play Mode, Octave, Sustain, Reverb, Note) ──
         self.controls_strip = DirectFrame(
             parent=self.synth_body,
-            pos=(0, 0, 0.51),
-            frameSize=(-0.94, 0.94, -0.080, 0.080),
+            pos=(0, 0, 0.52),
+            frameSize=(-0.94, 0.94, -0.075, 0.075),
             frameColor=(0.035, 0.045, 0.065, 1.0),
             relief=DGG.SUNKEN,
             borderWidth=(0.004, 0.004)
         )
         self.controls_strip.setBin("fixed", 5)
 
-        # PLAY MODE Segmented Switch
+        # PLAY MODE Selector
         DirectLabel(
             parent=self.controls_strip,
             text="PLAY MODE",
-            pos=(-0.68, 0, 0.050),
-            scale=0.020,
-            text_fg=(0.55, 0.65, 0.75, 1),
+            pos=(-0.68, 0, 0.045),
+            scale=0.022,
+            text_fg=(0.60, 0.70, 0.80, 1),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
@@ -284,37 +297,39 @@ class Piano:
         self.mode_air_btn = DirectButton(
             parent=self.controls_strip,
             text="AIR KEYBOARD",
-            pos=(-0.77, 0, -0.015),
-            text_scale=0.022,
+            pos=(-0.77, 0, -0.016),
+            text_scale=0.024,
             text_fg=(0.95, 1.0, 1.0, 1),
             frameSize=(-0.105, 0.105, -0.038, 0.038),
             frameColor=(0.08, 0.48, 0.78, 1),
             relief=DGG.FLAT,
-            command=lambda: self.set_play_mode("AIR_KEYBOARD")
+            command=self.set_play_mode,
+            extraArgs=["AIR_KEYBOARD"]
         )
 
         self.mode_pinch_btn = DirectButton(
             parent=self.controls_strip,
             text="PINCH MODE",
-            pos=(-0.56, 0, -0.015),
-            text_scale=0.022,
+            pos=(-0.56, 0, -0.016),
+            text_scale=0.024,
             text_fg=(0.60, 0.70, 0.80, 1),
             frameSize=(-0.095, 0.095, -0.038, 0.038),
             frameColor=(0.08, 0.10, 0.15, 1),
             relief=DGG.FLAT,
-            command=lambda: self.set_play_mode("PINCH")
+            command=self.set_play_mode,
+            extraArgs=["PINCH"]
         )
 
-        self._register_target("action", "mode_air", -0.77, 0.51 - 0.015 + 0.16, 0.105, 0.038, self.mode_air_btn)
-        self._register_target("action", "mode_pinch", -0.56, 0.51 - 0.015 + 0.16, 0.095, 0.038, self.mode_pinch_btn)
+        self._register_widget_target("action", "mode_air", self.mode_air_btn, 0.105, 0.038)
+        self._register_widget_target("action", "mode_pinch", self.mode_pinch_btn, 0.095, 0.038)
 
-        # OCTAVE Controller: [ - ] 4 [ + ]
+        # OCTAVE Controller with Big Clear Buttons: [ - ]  4  [ + ]
         DirectLabel(
             parent=self.controls_strip,
             text="OCTAVE",
-            pos=(-0.32, 0, 0.050),
-            scale=0.020,
-            text_fg=(0.55, 0.65, 0.75, 1),
+            pos=(-0.32, 0, 0.045),
+            scale=0.022,
+            text_fg=(0.60, 0.70, 0.80, 1),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
@@ -323,48 +338,52 @@ class Piano:
         self.octave_down_btn = DirectButton(
             parent=self.controls_strip,
             text="-",
-            pos=(-0.40, 0, -0.015),
-            text_scale=0.030,
+            pos=(-0.40, 0, -0.016),
+            text_scale=0.034,
             text_fg=(1.0, 1.0, 1.0, 1),
-            frameSize=(-0.035, 0.035, -0.035, 0.035),
-            frameColor=(0.10, 0.14, 0.20, 1),
-            relief=DGG.FLAT,
-            command=lambda: self.adjust_octave(-1)
+            frameSize=(-0.038, 0.038, -0.038, 0.038),
+            frameColor=(0.12, 0.16, 0.24, 1),
+            relief=DGG.RAISED,
+            borderWidth=(0.003, 0.003),
+            command=self.adjust_octave,
+            extraArgs=[-1]
         )
 
         self.octave_display = DirectLabel(
             parent=self.controls_strip,
             text=str(self.current_octave),
-            pos=(-0.32, 0, -0.024),
-            scale=0.032,
-            text_fg=(0.85, 0.95, 1.0, 1),
+            pos=(-0.32, 0, -0.026),
+            scale=0.038,
+            text_fg=(0.20, 0.95, 1.0, 1),
             text_align=TextNode.ACenter,
             frameColor=(0.06, 0.08, 0.12, 1),
-            frameSize=(-0.040, 0.040, -0.035, 0.035)
+            frameSize=(-0.042, 0.042, -0.038, 0.038)
         )
 
         self.octave_up_btn = DirectButton(
             parent=self.controls_strip,
             text="+",
-            pos=(-0.24, 0, -0.015),
-            text_scale=0.030,
+            pos=(-0.24, 0, -0.016),
+            text_scale=0.034,
             text_fg=(1.0, 1.0, 1.0, 1),
-            frameSize=(-0.035, 0.035, -0.035, 0.035),
-            frameColor=(0.10, 0.14, 0.20, 1),
-            relief=DGG.FLAT,
-            command=lambda: self.adjust_octave(+1)
+            frameSize=(-0.038, 0.038, -0.038, 0.038),
+            frameColor=(0.12, 0.16, 0.24, 1),
+            relief=DGG.RAISED,
+            borderWidth=(0.003, 0.003),
+            command=self.adjust_octave,
+            extraArgs=[+1]
         )
 
-        self._register_target("action", "octave_down", -0.40, 0.51 - 0.015 + 0.16, 0.035, 0.035, self.octave_down_btn)
-        self._register_target("action", "octave_up", -0.24, 0.51 - 0.015 + 0.16, 0.035, 0.035, self.octave_up_btn)
+        self._register_widget_target("action", "octave_down", self.octave_down_btn, 0.038, 0.038)
+        self._register_widget_target("action", "octave_up", self.octave_up_btn, 0.038, 0.038)
 
-        # SUSTAIN Switch: [ ON ] (Vibrant Green Pill Switch)
+        # SUSTAIN Switch: [ ON ] / [ OFF ]
         DirectLabel(
             parent=self.controls_strip,
             text="SUSTAIN",
-            pos=(-0.08, 0, 0.050),
-            scale=0.020,
-            text_fg=(0.55, 0.65, 0.75, 1),
+            pos=(-0.08, 0, 0.045),
+            scale=0.022,
+            text_fg=(0.60, 0.70, 0.80, 1),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
@@ -373,46 +392,23 @@ class Piano:
         self.sustain_btn = DirectButton(
             parent=self.controls_strip,
             text="ON",
-            pos=(-0.08, 0, -0.015),
-            text_scale=0.028,
+            pos=(-0.08, 0, -0.016),
+            text_scale=0.030,
             text_fg=(1.0, 1.0, 1.0, 1),
-            frameSize=(-0.085, 0.085, -0.036, 0.036),
+            frameSize=(-0.088, 0.088, -0.038, 0.038),
             frameColor=(0.12, 0.72, 0.32, 1),
             relief=DGG.FLAT,
             command=self.toggle_sustain
         )
-        self._register_target("action", "toggle_sustain", -0.08, 0.51 - 0.015 + 0.16, 0.085, 0.036, self.sustain_btn)
-
-        # VOLUME Display with LED Level Bars
-        DirectLabel(
-            parent=self.controls_strip,
-            text="VOLUME",
-            pos=(0.14, 0, 0.050),
-            scale=0.020,
-            text_fg=(0.55, 0.65, 0.75, 1),
-            text_align=TextNode.ACenter,
-            frameColor=(0, 0, 0, 0),
-            relief=None
-        )
-
-        self.vol_strip_label = DirectLabel(
-            parent=self.controls_strip,
-            text="||||||||  85%",
-            pos=(0.14, 0, -0.022),
-            scale=0.022,
-            text_fg=(0.20, 0.85, 1.0, 1),
-            text_align=TextNode.ACenter,
-            frameColor=(0.08, 0.10, 0.14, 1),
-            frameSize=(-0.095, 0.095, -0.034, 0.034)
-        )
+        self._register_widget_target("action", "toggle_sustain", self.sustain_btn, 0.088, 0.038)
 
         # REVERB Switch: [ OFF / ON ]
         DirectLabel(
             parent=self.controls_strip,
             text="REVERB",
-            pos=(0.38, 0, 0.050),
-            scale=0.020,
-            text_fg=(0.55, 0.65, 0.75, 1),
+            pos=(0.14, 0, 0.045),
+            scale=0.022,
+            text_fg=(0.60, 0.70, 0.80, 1),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
@@ -421,23 +417,23 @@ class Piano:
         self.reverb_btn = DirectButton(
             parent=self.controls_strip,
             text="OFF",
-            pos=(0.38, 0, -0.015),
-            text_scale=0.026,
+            pos=(0.14, 0, -0.016),
+            text_scale=0.028,
             text_fg=(0.70, 0.75, 0.85, 1),
-            frameSize=(-0.085, 0.085, -0.036, 0.036),
+            frameSize=(-0.085, 0.085, -0.038, 0.038),
             frameColor=(0.12, 0.14, 0.20, 1),
             relief=DGG.FLAT,
             command=self.toggle_reverb
         )
-        self._register_target("action", "toggle_reverb", 0.38, 0.51 - 0.015 + 0.16, 0.085, 0.036, self.reverb_btn)
+        self._register_widget_target("action", "toggle_reverb", self.reverb_btn, 0.085, 0.038)
 
-        # CURRENT NOTE Large Readout Box (Displays e.g. C4, F#4)
+        # CURRENT NOTE Large High-Contrast Display
         DirectLabel(
             parent=self.controls_strip,
             text="CURRENT NOTE",
-            pos=(0.68, 0, 0.050),
-            scale=0.020,
-            text_fg=(0.55, 0.65, 0.75, 1),
+            pos=(0.55, 0, 0.045),
+            scale=0.022,
+            text_fg=(0.60, 0.70, 0.80, 1),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
@@ -445,171 +441,211 @@ class Piano:
 
         self.current_note_frame = DirectFrame(
             parent=self.controls_strip,
-            pos=(0.68, 0, -0.015),
-            frameSize=(-0.12, 0.12, -0.038, 0.038),
+            pos=(0.55, 0, -0.016),
+            frameSize=(-0.16, 0.16, -0.040, 0.040),
             frameColor=(0.05, 0.08, 0.14, 1),
             relief=DGG.SUNKEN,
-            borderWidth=(0.003, 0.003)
+            borderWidth=(0.004, 0.004)
         )
 
         self.current_note_label = DirectLabel(
             parent=self.current_note_frame,
             text="C4",
-            pos=(0, 0, -0.016),
-            scale=0.046,
+            pos=(0, 0, -0.018),
+            scale=0.048,
             text_fg=(0.20, 0.95, 1.0, 1),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
         )
 
-        # ── 3. Middle Hardware Synth Console (Wheels, LCD Display & Controls) ──
+        # ── 3. Middle Hardware Rack — Main Keyboard Settings & Sound Bay ──
         self.rack_frame = DirectFrame(
             parent=self.synth_body,
-            pos=(0, 0, 0.29),
-            frameSize=(-0.94, 0.94, -0.125, 0.125),
+            pos=(0, 0, 0.31),
+            frameSize=(-0.94, 0.94, -0.120, 0.120),
             frameColor=(0.06, 0.07, 0.09, 1.0),
             relief=DGG.SUNKEN,
             borderWidth=(0.004, 0.004)
         )
         self.rack_frame.setBin("fixed", 5)
 
-        # Dual Pitch & Mod Wheels
-        DirectFrame(
-            parent=self.rack_frame,
-            pos=(-0.84, 0, 0.01),
-            frameSize=(-0.038, 0.038, -0.085, 0.085),
-            frameColor=(0.14, 0.15, 0.18, 1.0),
-            relief=DGG.RAISED,
-            borderWidth=(0.004, 0.004)
-        )
+        # ── CLUSTER A: SOUND PATCHES (Left side, 2 Rows of 3 Big Buttons) ──
         DirectLabel(
             parent=self.rack_frame,
-            text="PITCH",
-            pos=(-0.84, 0, -0.105),
-            scale=0.018,
-            text_fg=(0.55, 0.60, 0.65, 1),
+            text="SOUND PATCH",
+            pos=(-0.65, 0, 0.078),
+            scale=0.022,
+            text_fg=(0.75, 0.85, 0.95, 1),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
         )
 
-        DirectFrame(
-            parent=self.rack_frame,
-            pos=(-0.73, 0, 0.01),
-            frameSize=(-0.038, 0.038, -0.085, 0.085),
-            frameColor=(0.14, 0.15, 0.18, 1.0),
-            relief=DGG.RAISED,
-            borderWidth=(0.004, 0.004)
-        )
-        DirectLabel(
-            parent=self.rack_frame,
-            text="MOD",
-            pos=(-0.73, 0, -0.105),
-            scale=0.018,
-            text_fg=(0.55, 0.60, 0.65, 1),
-            text_align=TextNode.ACenter,
-            frameColor=(0, 0, 0, 0),
-            relief=None
-        )
+        patch_row1 = [("PIANO", -0.82), ("E.PIANO", -0.65), ("ORGAN", -0.48)]
+        patch_row2 = [("STRINGS", -0.82), ("PAD", -0.65), ("SYNTH", -0.48)]
 
-        # Center Blue LCD Spectrum & Waveform Screen
+        for pname, px in patch_row1:
+            is_active = (pname == self.current_patch)
+            col = (0.10, 0.52, 0.88, 1) if is_active else (0.10, 0.12, 0.18, 1)
+            btn = DirectButton(
+                parent=self.rack_frame,
+                text=pname,
+                pos=(px, 0, 0.028),
+                text_scale=0.022,
+                text_fg=(1.0, 1.0, 1.0, 1),
+                frameSize=(-0.078, 0.078, -0.024, 0.024),
+                frameColor=col,
+                relief=DGG.FLAT,
+                command=self.set_synth_patch,
+                extraArgs=[pname]
+            )
+            self.patch_buttons[pname] = btn
+            self._register_widget_target("patch", pname, btn, 0.078, 0.024)
+
+        for pname, px in patch_row2:
+            is_active = (pname == self.current_patch)
+            col = (0.10, 0.52, 0.88, 1) if is_active else (0.10, 0.12, 0.18, 1)
+            btn = DirectButton(
+                parent=self.rack_frame,
+                text=pname,
+                pos=(px, 0, -0.038),
+                text_scale=0.022,
+                text_fg=(1.0, 1.0, 1.0, 1),
+                frameSize=(-0.078, 0.078, -0.024, 0.024),
+                frameColor=col,
+                relief=DGG.FLAT,
+                command=self.set_synth_patch,
+                extraArgs=[pname]
+            )
+            self.patch_buttons[pname] = btn
+            self._register_widget_target("patch", pname, btn, 0.078, 0.024)
+
+        # ── CLUSTER B: Blue LCD Spectrum Analyzer Screen (Center) ──
         self.lcd_screen = DirectFrame(
             parent=self.rack_frame,
-            pos=(-0.03, 0, 0.015),
-            frameSize=(-0.24, 0.24, -0.088, 0.088),
+            pos=(-0.05, 0, 0.00),
+            frameSize=(-0.24, 0.24, -0.095, 0.095),
             frameColor=(0.01, 0.08, 0.16, 1.0),
             relief=DGG.SUNKEN,
             borderWidth=(0.004, 0.004)
         )
 
-        # Real-time animated audio spectrum display
-        self.spectrum_label = DirectLabel(
+        DirectLabel(
             parent=self.lcd_screen,
-            text="| | || ||| |||| ||||| |||| ||| || | |",
-            pos=(0, 0, -0.015),
-            scale=0.024,
-            text_fg=(0.25, 0.90, 1.0, 0.95),
+            text="SYNTH SPECTRUM ANALYZER",
+            pos=(0, 0, 0.065),
+            scale=0.018,
+            text_fg=(0.35, 0.75, 1.0, 0.8),
             text_align=TextNode.ACenter,
             frameColor=(0, 0, 0, 0),
             relief=None
         )
 
-        # 6 Sound Patch Selectors directly under LCD screen
-        self.patch_buttons = {}
-        for p_idx, pname in enumerate(self.SYNTH_PATCHES):
-            is_active = (pname == self.current_patch)
-            p_col = (0.10, 0.50, 0.85, 1) if is_active else (0.10, 0.12, 0.16, 1)
-            p_fg = (1.0, 1.0, 1.0, 1) if is_active else (0.65, 0.70, 0.78, 1)
-            px = -0.205 + p_idx * 0.070
-            pz = -0.088
-            btn = DirectButton(
-                parent=self.rack_frame,
-                text=pname,
-                pos=(px, 0, pz),
-                text_scale=0.016,
-                text_fg=p_fg,
-                frameSize=(-0.032, 0.032, -0.018, 0.018),
-                frameColor=p_col,
-                relief=DGG.FLAT,
-                command=lambda p=pname: self.set_synth_patch(p)
-            )
-            self.patch_buttons[pname] = btn
-            self._register_target("patch", pname, px, 0.29 + pz + 0.16, 0.032, 0.018, btn)
-
-        # Rotary Synth Knobs on Right (CUTOFF, RESONANCE, RELEASE)
-        knobs = [
-            ("CUTOFF", 0.32),
-            ("RESONANCE", 0.50),
-            ("RELEASE", 0.68)
-        ]
-        for kname, kpos_x in knobs:
-            DirectFrame(
-                parent=self.rack_frame,
-                pos=(kpos_x, 0, 0.025),
-                frameSize=(-0.042, 0.042, -0.042, 0.042),
-                frameColor=(0.14, 0.16, 0.20, 1.0),
-                relief=DGG.RAISED,
-                borderWidth=(0.004, 0.004)
-            )
-            DirectLabel(
-                parent=self.rack_frame,
-                text=kname,
-                pos=(kpos_x, 0, -0.042),
-                scale=0.016,
-                text_fg=(0.60, 0.65, 0.70, 1),
-                text_align=TextNode.ACenter,
-                frameColor=(0, 0, 0, 0),
-                relief=None
-            )
-
-        # VISUAL PERFORMANCE Mode Toggle Button
-        self.vfx_btn = DirectButton(
-            parent=self.rack_frame,
-            text="VISUAL FX",
-            pos=(0.83, 0, 0.03),
-            text_scale=0.016,
-            text_fg=(1.0, 1.0, 1.0, 1),
-            frameSize=(-0.040, 0.040, -0.020, 0.020),
-            frameColor=(0.10, 0.65, 0.40, 1),
-            relief=DGG.FLAT,
-            command=self.toggle_visual_fx
+        self.spectrum_label = DirectLabel(
+            parent=self.lcd_screen,
+            text="| | || ||| |||| ||||| |||| ||| || | |",
+            pos=(0, 0, -0.010),
+            scale=0.026,
+            text_fg=(0.25, 0.92, 1.0, 0.95),
+            text_align=TextNode.ACenter,
+            frameColor=(0, 0, 0, 0),
+            relief=None
         )
-        self._register_target("action", "toggle_vfx", 0.83, 0.29 + 0.03 + 0.16, 0.040, 0.020, self.vfx_btn)
 
-        # Speed / Sensitivity Button
+        self.lcd_status_label = DirectLabel(
+            parent=self.lcd_screen,
+            text="PATCH: PIANO  |  OCT: 4",
+            pos=(0, 0, -0.070),
+            scale=0.018,
+            text_fg=(0.35, 0.85, 0.60, 0.9),
+            text_align=TextNode.ACenter,
+            frameColor=(0, 0, 0, 0),
+            relief=None
+        )
+
+        # ── CLUSTER C: MAIN KEYBOARD SETTINGS (Right side, Volume, Speed, Visual FX) ──
+        DirectLabel(
+            parent=self.rack_frame,
+            text="KEYBOARD SETTINGS",
+            pos=(0.55, 0, 0.078),
+            scale=0.022,
+            text_fg=(0.75, 0.85, 0.95, 1),
+            text_align=TextNode.ACenter,
+            frameColor=(0, 0, 0, 0),
+            relief=None
+        )
+
+        # Row 1: Piano Volume [-]  85%  [+]
+        self.piano_vol_down = DirectButton(
+            parent=self.rack_frame,
+            text="-",
+            pos=(0.32, 0, 0.028),
+            text_scale=0.030,
+            text_fg=(1.0, 1.0, 1.0, 1),
+            frameSize=(-0.035, 0.035, -0.024, 0.024),
+            frameColor=(0.14, 0.18, 0.26, 1),
+            relief=DGG.RAISED,
+            borderWidth=(0.003, 0.003),
+            command=self.adjust_piano_volume,
+            extraArgs=[-0.10]
+        )
+
+        self.piano_vol_label = DirectLabel(
+            parent=self.rack_frame,
+            text="VOL: 90%",
+            pos=(0.48, 0, 0.020),
+            scale=0.022,
+            text_fg=(0.25, 0.92, 1.0, 1),
+            text_align=TextNode.ACenter,
+            frameColor=(0.06, 0.08, 0.12, 1),
+            frameSize=(-0.095, 0.095, -0.024, 0.024)
+        )
+
+        self.piano_vol_up = DirectButton(
+            parent=self.rack_frame,
+            text="+",
+            pos=(0.64, 0, 0.028),
+            text_scale=0.030,
+            text_fg=(1.0, 1.0, 1.0, 1),
+            frameSize=(-0.035, 0.035, -0.024, 0.024),
+            frameColor=(0.14, 0.18, 0.26, 1),
+            relief=DGG.RAISED,
+            borderWidth=(0.003, 0.003),
+            command=self.adjust_piano_volume,
+            extraArgs=[+0.10]
+        )
+
+        self._register_widget_target("action", "pvol_down", self.piano_vol_down, 0.035, 0.024)
+        self._register_widget_target("action", "pvol_up", self.piano_vol_up, 0.035, 0.024)
+
+        # Row 2: Speed Toggle and Visual FX Toggle
         self.speed_btn = DirectButton(
             parent=self.rack_frame,
-            text="NORMAL",
-            pos=(0.83, 0, -0.03),
-            text_scale=0.016,
+            text=f"SPEED: {self.speed_mode}",
+            pos=(0.40, 0, -0.038),
+            text_scale=0.022,
             text_fg=(1.0, 1.0, 1.0, 1),
-            frameSize=(-0.040, 0.040, -0.020, 0.020),
+            frameSize=(-0.095, 0.095, -0.024, 0.024),
             frameColor=(0.70, 0.45, 0.08, 1),
             relief=DGG.FLAT,
             command=self.toggle_speed_mode
         )
-        self._register_target("action", "toggle_speed", 0.83, 0.29 - 0.03 + 0.16, 0.040, 0.020, self.speed_btn)
+
+        self.vfx_btn = DirectButton(
+            parent=self.rack_frame,
+            text="VISUAL FX",
+            pos=(0.64, 0, -0.038),
+            text_scale=0.022,
+            text_fg=(1.0, 1.0, 1.0, 1),
+            frameSize=(-0.095, 0.095, -0.024, 0.024),
+            frameColor=(0.10, 0.65, 0.40, 1),
+            relief=DGG.FLAT,
+            command=self.toggle_visual_fx
+        )
+
+        self._register_widget_target("action", "toggle_speed", self.speed_btn, 0.095, 0.024)
+        self._register_widget_target("action", "toggle_vfx", self.vfx_btn, 0.095, 0.024)
 
     # ========================================================
     # MAIN REALISTIC PIANO KEYBOARD & BOTTOM DOCK
@@ -630,7 +666,7 @@ class Piano:
         self.keybed_frame.setDepthWrite(False)
         self.keybed_frame.setDepthTest(False)
 
-        # Red felt damper strip at top of keybed (authentic physical piano detail)
+        # Red felt damper strip at top of keybed
         DirectFrame(
             parent=self.keybed_frame,
             pos=(0, 0, 0.365),
@@ -661,7 +697,6 @@ class Piano:
             frame.setDepthWrite(False)
             frame.setDepthTest(False)
 
-            # Beveled Bottom Lip
             bevel = DirectFrame(
                 parent=frame,
                 pos=(0, 0, -0.342),
@@ -670,12 +705,11 @@ class Piano:
             )
             bevel.setBin("fixed", 21)
 
-            # Note Label
             lbl = DirectLabel(
                 parent=frame,
                 text=note,
                 pos=(0, 0, -0.250),
-                scale=0.046,
+                scale=0.048,
                 text_fg=(0.10, 0.12, 0.16, 1.0),
                 frameColor=(0, 0, 0, 0),
                 relief=None
@@ -683,9 +717,7 @@ class Piano:
             lbl.setBin("fixed", 22)
 
             self.white_frames[note] = frame
-
-            world_z = -0.28 + z_pos + 0.16
-            self._register_target("note", note, x, world_z, 0.108, 0.355, frame, is_black=False)
+            self._register_widget_target("note", note, frame, 0.108, 0.355, is_black=False)
 
         # ----------------------------------------------------
         # 2. BLACK KEYS (5 keys: C#, D#, F#, G#, A#)
@@ -717,7 +749,6 @@ class Piano:
             frame.setDepthWrite(False)
             frame.setDepthTest(False)
 
-            # Top highlight
             top_bevel = DirectFrame(
                 parent=frame,
                 pos=(0, 0, 0.175),
@@ -726,7 +757,6 @@ class Piano:
             )
             top_bevel.setBin("fixed", 36)
 
-            # Bottom lip
             bot_bevel = DirectFrame(
                 parent=frame,
                 pos=(0, 0, -0.178),
@@ -747,9 +777,7 @@ class Piano:
             lbl.setBin("fixed", 37)
 
             self.black_frames[note] = frame
-
-            world_z = -0.28 + z_pos + 0.16
-            self._register_target("note", note, x, world_z, 0.065, 0.190, frame, is_black=True)
+            self._register_widget_target("note", note, frame, 0.065, 0.190, is_black=True)
 
         # ----------------------------------------------------
         # 3. BOTTOM NAVIGATION DOCK (PIANO, DRUMS, HOME)
@@ -764,7 +792,6 @@ class Piano:
         )
         self.bottom_dock.setBin("fixed", 5)
 
-        # PIANO Button (Active with glowing border)
         self.dock_piano = DirectButton(
             parent=self.bottom_dock,
             text="PIANO",
@@ -776,7 +803,6 @@ class Piano:
             relief=DGG.FLAT
         )
 
-        # DRUMS Button (Navigates to Drums mode)
         self.dock_drums = DirectButton(
             parent=self.bottom_dock,
             text="DRUMS",
@@ -786,10 +812,10 @@ class Piano:
             frameSize=(-0.14, 0.14, -0.045, 0.045),
             frameColor=(0.08, 0.10, 0.15, 1),
             relief=DGG.FLAT,
-            command=lambda: self.base.set_mode("DRUMS")
+            command=self._navigate_to,
+            extraArgs=["DRUMS"]
         )
 
-        # HOME Button (Navigates to Home mode)
         self.dock_home = DirectButton(
             parent=self.bottom_dock,
             text="HOME",
@@ -799,11 +825,12 @@ class Piano:
             frameSize=(-0.14, 0.14, -0.045, 0.045),
             frameColor=(0.08, 0.10, 0.15, 1),
             relief=DGG.FLAT,
-            command=lambda: self.base.set_mode("HOME")
+            command=self._navigate_to,
+            extraArgs=["HOME"]
         )
 
-        self._register_target("action", "nav_drums", 0.0, -0.74 - 0.012 + 0.16, 0.14, 0.045, self.dock_drums)
-        self._register_target("action", "nav_home", 0.34, -0.74 - 0.012 + 0.16, 0.14, 0.045, self.dock_home)
+        self._register_widget_target("action", "nav_drums", self.dock_drums, 0.14, 0.045)
+        self._register_widget_target("action", "nav_home", self.dock_home, 0.14, 0.045)
 
     # ========================================================
     # LEFT PANEL — CHORD STUDIO (WITH HOME BUTTON & MAJOR/MINOR)
@@ -821,7 +848,7 @@ class Piano:
         )
         self.chord_dock.setBin("fixed", 5)
 
-        # Top HOME Button in Left Panel (Matching Image 2)
+        # Top HOME Button
         self.panel_home_btn = DirectButton(
             parent=self.chord_dock,
             text="HOME",
@@ -832,11 +859,11 @@ class Piano:
             frameColor=(0.12, 0.16, 0.24, 1),
             relief=DGG.RAISED,
             borderWidth=(0.004, 0.004),
-            command=lambda: self.base.set_mode("HOME")
+            command=self._navigate_to,
+            extraArgs=["HOME"]
         )
-        self._register_target("action", "nav_home", -1.35 - 0.20, -0.02 + 0.62, 0.11, 0.032, self.panel_home_btn)
+        self._register_widget_target("action", "nav_home", self.panel_home_btn, 0.11, 0.032)
 
-        # Header Title
         DirectLabel(
             parent=self.chord_dock,
             text="CHORD STUDIO",
@@ -848,7 +875,7 @@ class Piano:
             relief=None
         )
 
-        # Sub-tabs: [ MAJOR ] and [ MINOR ] with functional switching
+        # Tabs: [ MAJOR ] and [ MINOR ]
         self.tab_major = DirectButton(
             parent=self.chord_dock,
             text="MAJOR",
@@ -858,7 +885,8 @@ class Piano:
             frameSize=(-0.14, 0.14, -0.030, 0.030),
             frameColor=(0.08, 0.52, 0.85, 1),
             relief=DGG.FLAT,
-            command=lambda: self.switch_chord_tab("MAJOR")
+            command=self.switch_chord_tab,
+            extraArgs=["MAJOR"]
         )
 
         self.tab_minor = DirectButton(
@@ -870,13 +898,13 @@ class Piano:
             frameSize=(-0.14, 0.14, -0.030, 0.030),
             frameColor=(0.12, 0.14, 0.18, 1),
             relief=DGG.FLAT,
-            command=lambda: self.switch_chord_tab("MINOR")
+            command=self.switch_chord_tab,
+            extraArgs=["MINOR"]
         )
 
-        self._register_target("action", "tab_major", -1.35 - 0.16, -0.02 + 0.54, 0.14, 0.030, self.tab_major)
-        self._register_target("action", "tab_minor", -1.35 + 0.16, -0.02 + 0.54, 0.14, 0.030, self.tab_minor)
+        self._register_widget_target("action", "tab_major", self.tab_major, 0.14, 0.030)
+        self._register_widget_target("action", "tab_minor", self.tab_minor, 0.14, 0.030)
 
-        # Container for 7 Chord Buttons
         self.chord_buttons_container = DirectFrame(
             parent=self.chord_dock,
             pos=(0, 0, 0),
@@ -885,7 +913,7 @@ class Piano:
 
         self._render_chord_pads()
 
-        # Bottom Progression Section
+        # Progression Section
         DirectLabel(
             parent=self.chord_dock,
             text="CHORD PROGRESSION",
@@ -919,16 +947,13 @@ class Piano:
             relief=DGG.FLAT,
             command=self.step_chord_progression
         )
-        self._register_target("progression", "step", -1.35, -0.02 - 0.54, 0.33, 0.042, self.prog_btn)
+        self._register_widget_target("progression", "step", self.prog_btn, 0.33, 0.042)
 
     def _render_chord_pads(self):
-        """
-        Dynamically builds the 7 chord buttons based on active tab (MAJOR or MINOR).
-        """
+
         for child in self.chord_buttons_container.getChildren():
             child.removeNode()
 
-        # Remove existing chord targets from interactive regions
         self.interactive_regions = [r for r in self.interactive_regions if r["kind"] != "chord"]
         self.chord_buttons.clear()
 
@@ -947,7 +972,8 @@ class Piano:
                 frameSize=(-0.33, 0.33, -0.046, 0.046),
                 frameColor=col,
                 relief=DGG.FLAT,
-                command=lambda c=name: self.play_chord(c)
+                command=self.play_chord,
+                extraArgs=[name]
             )
 
             DirectLabel(
@@ -984,9 +1010,7 @@ class Piano:
             )
 
             self.chord_buttons[name] = btn
-
-            world_z = -0.02 + z
-            self._register_target("chord", name, -1.35, world_z, 0.33, 0.046, btn)
+            self._register_widget_target("chord", name, btn, 0.33, 0.046)
 
     def switch_chord_tab(self, tab):
 
@@ -1005,7 +1029,7 @@ class Piano:
         self._render_chord_pads()
 
     # ========================================================
-    # RIGHT PANEL — MUSIC STUDIO (TRACKS, MUTE & RECORDER)
+    # RIGHT PANEL — MUSIC STUDIO (8 FULL-VOLUME TRACKS)
     # ========================================================
 
     def _build_music_studio(self):
@@ -1020,7 +1044,7 @@ class Piano:
         )
         self.music_dock.setBin("fixed", 5)
 
-        # Top SETTINGS Button in Right Panel (Matching Image 2)
+        # Top SETTINGS Button
         self.panel_settings_btn = DirectButton(
             parent=self.music_dock,
             text="SETTINGS",
@@ -1033,9 +1057,8 @@ class Piano:
             borderWidth=(0.004, 0.004),
             command=self.open_settings
         )
-        self._register_target("action", "open_settings", 1.35 - 0.16, -0.02 + 0.62, 0.12, 0.032, self.panel_settings_btn)
+        self._register_widget_target("action", "open_settings", self.panel_settings_btn, 0.12, 0.032)
 
-        # Header Title
         DirectLabel(
             parent=self.music_dock,
             text="MUSIC STUDIO",
@@ -1047,7 +1070,7 @@ class Piano:
             relief=None
         )
 
-        # Sub-tabs: [ TRACKS ] and [ CUSTOM ]
+        # Tabs: [ TRACKS ] and [ CUSTOM ]
         self.tab_tracks = DirectButton(
             parent=self.music_dock,
             text="TRACKS",
@@ -1088,7 +1111,8 @@ class Piano:
                 frameSize=(-0.33, 0.33, -0.023, 0.023),
                 frameColor=bg_col,
                 relief=DGG.FLAT,
-                command=lambda idx=i: self.select_track(idx)
+                command=self.select_track,
+                extraArgs=[i]
             )
 
             tlbl = DirectLabel(
@@ -1114,9 +1138,7 @@ class Piano:
             )
 
             self.track_buttons.append((tbtn, tlbl))
-
-            world_z = -0.02 + z
-            self._register_target("track", i, 1.35, world_z, 0.33, 0.023, tbtn)
+            self._register_widget_target("track", i, tbtn, 0.33, 0.023)
 
         # ── Transport Controls Row: PLAY, PAUSE, STOP, MUTE ──
         self.track_play_btn = DirectButton(
@@ -1167,10 +1189,10 @@ class Piano:
             command=self.toggle_mute
         )
 
-        self._register_target("action", "play_track", 1.35 - 0.25, -0.02 - 0.03, 0.075, 0.034, self.track_play_btn)
-        self._register_target("action", "pause_track", 1.35 - 0.08, -0.02 - 0.03, 0.075, 0.034, self.track_pause_btn)
-        self._register_target("action", "stop_track", 1.35 + 0.09, -0.02 - 0.03, 0.075, 0.034, self.track_stop_btn)
-        self._register_target("action", "toggle_mute", 1.35 + 0.26, -0.02 - 0.03, 0.075, 0.034, self.track_mute_btn)
+        self._register_widget_target("action", "play_track", self.track_play_btn, 0.075, 0.034)
+        self._register_widget_target("action", "pause_track", self.track_pause_btn, 0.075, 0.034)
+        self._register_widget_target("action", "stop_track", self.track_stop_btn, 0.075, 0.034)
+        self._register_widget_target("action", "toggle_mute", self.track_mute_btn, 0.075, 0.034)
 
         # ── TRACK VOLUME Slider & Progress Indicator ──
         DirectLabel(
@@ -1204,12 +1226,13 @@ class Piano:
             frameSize=(-0.05, 0.05, -0.028, 0.028),
             frameColor=(0.12, 0.16, 0.22, 1),
             relief=DGG.FLAT,
-            command=lambda: self.adjust_track_volume(-0.10)
+            command=self.adjust_track_volume,
+            extraArgs=[-0.10]
         )
 
         self.vol_label = DirectLabel(
             parent=self.music_dock,
-            text="[||||||||||||||    ]  80%",
+            text="[||||||||||||||||]  100%",
             pos=(0.02, 0, -0.165),
             scale=0.022,
             text_fg=(0.20, 0.85, 1.0, 1),
@@ -1227,11 +1250,12 @@ class Piano:
             frameSize=(-0.05, 0.05, -0.028, 0.028),
             frameColor=(0.12, 0.16, 0.22, 1),
             relief=DGG.FLAT,
-            command=lambda: self.adjust_track_volume(+0.10)
+            command=self.adjust_track_volume,
+            extraArgs=[+0.10]
         )
 
-        self._register_target("action", "vol_down", 1.35 - 0.25, -0.02 - 0.16, 0.05, 0.028, self.vol_down_btn)
-        self._register_target("action", "vol_up", 1.35 + 0.28, -0.02 - 0.16, 0.05, 0.028, self.vol_up_btn)
+        self._register_widget_target("action", "vol_down", self.vol_down_btn, 0.05, 0.028)
+        self._register_widget_target("action", "vol_up", self.vol_up_btn, 0.05, 0.028)
 
         # ── RECORDING Studio Controls ──
         DirectLabel(
@@ -1269,8 +1293,8 @@ class Piano:
             command=self.stop_recording
         )
 
-        self._register_target("action", "toggle_record", 1.35 - 0.16, -0.02 - 0.30, 0.14, 0.038, self.record_btn)
-        self._register_target("action", "stop_record", 1.35 + 0.16, -0.02 - 0.30, 0.14, 0.038, self.rec_stop_btn)
+        self._register_widget_target("action", "toggle_record", self.record_btn, 0.14, 0.038)
+        self._register_widget_target("action", "stop_record", self.rec_stop_btn, 0.14, 0.038)
 
         # Recording Status Timer & Dynamic VU Meter
         self.rec_status_label = DirectLabel(
@@ -1307,7 +1331,7 @@ class Piano:
             relief=DGG.FLAT,
             command=self.save_and_export_recording
         )
-        self._register_target("action", "save_record", 1.35, -0.02 - 0.51, 0.33, 0.042, self.save_rec_btn)
+        self._register_widget_target("action", "save_record", self.save_rec_btn, 0.33, 0.042)
 
     # ========================================================
     # SETTINGS MODAL DIALOG
@@ -1325,7 +1349,6 @@ class Piano:
         )
         self.settings_frame.setBin("fixed", 90)
 
-        # Header
         DirectLabel(
             parent=self.settings_frame,
             text="STUDIO SETTINGS & CALIBRATION",
@@ -1337,7 +1360,6 @@ class Piano:
             relief=None
         )
 
-        # Setting 1: Gesture Sensitivity
         DirectLabel(
             parent=self.settings_frame,
             text="Gesture Tracking Sensitivity:",
@@ -1361,7 +1383,6 @@ class Piano:
             command=self.toggle_speed_mode
         )
 
-        # Setting 2: Master Volume
         DirectLabel(
             parent=self.settings_frame,
             text="Master System Volume:",
@@ -1385,7 +1406,6 @@ class Piano:
             command=self._cycle_master_volume
         )
 
-        # Setting 3: Visual Performance FX
         DirectLabel(
             parent=self.settings_frame,
             text="Visual Performance Effects:",
@@ -1409,7 +1429,6 @@ class Piano:
             command=self.toggle_visual_fx
         )
 
-        # Setting 4: Audio Reverb Acoustics
         DirectLabel(
             parent=self.settings_frame,
             text="Concert Hall Reverb Tail:",
@@ -1433,7 +1452,6 @@ class Piano:
             command=self.toggle_reverb
         )
 
-        # Close Settings Button
         self.close_settings_btn = DirectButton(
             parent=self.settings_frame,
             text="CLOSE SETTINGS",
@@ -1469,6 +1487,125 @@ class Piano:
         self.cfg_vol_btn["text"] = f"{pct}%"
 
     # ========================================================
+    # INTERACTIVE TARGET SYSTEM (EXACT ABSOLUTE COORDINATES)
+    # ========================================================
+
+    def _register_widget_target(self, kind, ident, widget, w, h, is_black=False):
+        """
+        Uses widget.getPos(base.aspect2d) to ensure 100% collision precision.
+        """
+        self.interactive_regions.append({
+            "kind": kind,
+            "ident": ident,
+            "widget": widget,
+            "w": w,
+            "h": h,
+            "black": is_black
+        })
+
+    def find_target(self, x, z):
+        """
+        Finds interactive target matching cursor (x, z).
+        """
+        if self.settings_open:
+            if abs(x) <= 0.25 and abs(z - (-0.40)) <= 0.046:
+                return ("action", "close_settings")
+            return None
+
+        # 1. Black keys priority
+        for reg in self.interactive_regions:
+            if reg["kind"] == "note" and reg["black"]:
+                wpos = reg["widget"].getPos(self.base.aspect2d)
+                if abs(x - wpos.getX()) <= reg["w"] and abs(z - wpos.getZ()) <= reg["h"]:
+                    return (reg["kind"], reg["ident"])
+
+        # 2. Controls, Buttons, Chords & Patches
+        for reg in self.interactive_regions:
+            if reg["kind"] != "note":
+                wpos = reg["widget"].getPos(self.base.aspect2d)
+                if abs(x - wpos.getX()) <= reg["w"] and abs(z - wpos.getZ()) <= reg["h"]:
+                    return (reg["kind"], reg["ident"])
+
+        # 3. White keys
+        for reg in self.interactive_regions:
+            if reg["kind"] == "note" and not reg["black"]:
+                wpos = reg["widget"].getPos(self.base.aspect2d)
+                if abs(x - wpos.getX()) <= reg["w"] and abs(z - wpos.getZ()) <= reg["h"]:
+                    return (reg["kind"], reg["ident"])
+
+        return None
+
+    def execute_target_action(self, kind, ident, hand_idx=0):
+
+        cx, cz = self.cursors[hand_idx] if self.cursors[hand_idx] else (0, 0)
+        col = (0.0, 0.85, 1.0, 1.0) if hand_idx == 0 else (1.0, 0.35, 0.85, 1.0)
+        self._spawn_selection_ripple(cx, cz, col)
+
+        if kind == "note":
+            self.key_press_colors[ident] = col
+            self.play_note(ident)
+        elif kind == "chord":
+            self.play_chord(ident)
+        elif kind == "progression":
+            self.step_chord_progression()
+        elif kind == "track":
+            self.select_track(ident)
+            self.play_track()
+        elif kind == "patch":
+            self.set_synth_patch(ident)
+        elif kind == "action":
+            if ident == "mode_air":
+                self.set_play_mode("AIR_KEYBOARD")
+            elif ident == "mode_pinch":
+                self.set_play_mode("PINCH")
+            elif ident == "octave_down":
+                self.adjust_octave(-1)
+            elif ident == "octave_up":
+                self.adjust_octave(+1)
+            elif ident == "toggle_sustain":
+                self.toggle_sustain()
+            elif ident == "toggle_reverb":
+                self.toggle_reverb()
+            elif ident == "toggle_vfx":
+                self.toggle_visual_fx()
+            elif ident == "toggle_speed":
+                self.toggle_speed_mode()
+            elif ident == "pvol_down":
+                self.adjust_piano_volume(-0.10)
+            elif ident == "pvol_up":
+                self.adjust_piano_volume(+0.10)
+            elif ident == "play_track":
+                self.play_track()
+            elif ident == "pause_track":
+                self.pause_track()
+            elif ident == "stop_track":
+                self.stop_track()
+            elif ident == "toggle_mute":
+                self.toggle_mute()
+            elif ident == "vol_down":
+                self.adjust_track_volume(-0.10)
+            elif ident == "vol_up":
+                self.adjust_track_volume(+0.10)
+            elif ident == "toggle_record":
+                self.toggle_recording()
+            elif ident == "stop_record":
+                self.stop_recording()
+            elif ident == "save_record":
+                self.save_and_export_recording()
+            elif ident == "tab_major":
+                self.switch_chord_tab("MAJOR")
+            elif ident == "tab_minor":
+                self.switch_chord_tab("MINOR")
+            elif ident == "open_settings":
+                self.open_settings()
+            elif ident == "close_settings":
+                self.close_settings()
+            elif ident == "nav_drums":
+                self._navigate_to("DRUMS")
+            elif ident == "nav_home":
+                self._navigate_to("HOME")
+
+    # ========================================================
     # SOUND, PATCH, OCTAVE, CHORD & SUSTAIN PLAYBACK
     # ========================================================
 
@@ -1484,7 +1621,6 @@ class Piano:
                 reverb=self.reverb_on
             )
 
-            # Apply damper cutoff if sustain is OFF
             if not self.sustain_on and channel is not None:
                 channel.fadeout(260)
 
@@ -1493,12 +1629,10 @@ class Piano:
             self.vu_level = min(1.0, self.vu_level + 0.65)
             self._trigger_spectrum_peak()
 
-            # Display played note with exact octave
             note_display = f"{note}{self.current_octave}"
             self.current_display_note = note_display
             self.current_note_label["text"] = note_display
 
-            # Trigger Visual Performance Beam Effect
             if self.visual_fx_enabled:
                 self._spawn_visual_beam(note)
 
@@ -1536,17 +1670,27 @@ class Piano:
 
         self.current_octave = max(2, min(6, self.current_octave + delta))
         self.octave_display["text"] = str(self.current_octave)
+        self.lcd_status_label["text"] = f"PATCH: {self.current_patch}  |  OCT: {self.current_octave}"
 
     def set_synth_patch(self, patch):
 
         self.current_patch = patch
         for pname, btn in self.patch_buttons.items():
             if pname == patch:
-                btn["frameColor"] = (0.10, 0.50, 0.85, 1)
+                btn["frameColor"] = (0.10, 0.52, 0.88, 1)
                 btn["text_fg"] = (1.0, 1.0, 1.0, 1)
             else:
-                btn["frameColor"] = (0.10, 0.12, 0.16, 1)
+                btn["frameColor"] = (0.10, 0.12, 0.18, 1)
                 btn["text_fg"] = (0.65, 0.70, 0.78, 1)
+
+        self.lcd_status_label["text"] = f"PATCH: {self.current_patch}  |  OCT: {self.current_octave}"
+
+    def adjust_piano_volume(self, delta):
+
+        self.piano_volume = max(0.0, min(1.0, self.piano_volume + delta))
+        self.sound_manager.set_piano_volume(self.piano_volume)
+        pct = int(self.piano_volume * 100)
+        self.piano_vol_label["text"] = f"VOL: {pct}%"
 
     def toggle_sustain(self):
 
@@ -1585,7 +1729,7 @@ class Piano:
             self.cfg_vfx_btn["frameColor"] = (0.10, 0.60, 0.40, 1) if self.visual_fx_enabled else (0.45, 0.20, 0.20, 1)
 
     # ========================================================
-    # BACKING TRACK ENGINE (8 AUTHENTIC DISTINCT BEATS)
+    # BACKING TRACK ENGINE (FULL-VOLUME AUTHENTIC BEATS)
     # ========================================================
 
     def _load_active_track(self):
@@ -1597,6 +1741,7 @@ class Piano:
         track_path = project_root / "assets" / fname
 
         if not track_path.exists():
+            print("Track path not found:", track_path)
             return
 
         try:
@@ -1704,7 +1849,6 @@ class Piano:
         bars_count = int(self.track_volume * 14)
         bars_str = "|" * bars_count + " " * (14 - bars_count)
         self.vol_label["text"] = f"[{bars_str}]  {pct}%"
-        self.vol_strip_label["text"] = f"{'|'*int(self.track_volume*8)}  {pct}%"
 
     # ========================================================
     # PERFORMANCE RECORDER
@@ -1842,120 +1986,6 @@ class Piano:
         return out_path
 
     # ========================================================
-    # INTERACTIVE TARGET SYSTEM (ALL STUDIO BUTTONS & KEYS)
-    # ========================================================
-
-    def _register_target(self, kind, ident, x, z, w, h, widget, is_black=False):
-
-        self.interactive_regions.append({
-            "kind": kind,
-            "ident": ident,
-            "x": x,
-            "z": z,
-            "w": w,
-            "h": h,
-            "widget": widget,
-            "black": is_black
-        })
-
-    def find_target(self, x, z):
-        """
-        Priority collision: Black keys first, then on-screen buttons, then white keys.
-        """
-        # If settings modal is open, only check settings buttons
-        if self.settings_open:
-            if abs(x) <= 0.25 and abs(z - (-0.40)) <= 0.046:
-                return ("action", "close_settings")
-            return None
-
-        # 1. Black keys
-        for reg in self.interactive_regions:
-            if reg["kind"] == "note" and reg["black"]:
-                if abs(x - reg["x"]) <= reg["w"] and abs(z - reg["z"]) <= reg["h"]:
-                    return (reg["kind"], reg["ident"])
-
-        # 2. Controls, Chords, Navigation & Studio buttons
-        for reg in self.interactive_regions:
-            if reg["kind"] != "note":
-                if abs(x - reg["x"]) <= reg["w"] and abs(z - reg["z"]) <= reg["h"]:
-                    return (reg["kind"], reg["ident"])
-
-        # 3. White keys
-        for reg in self.interactive_regions:
-            if reg["kind"] == "note" and not reg["black"]:
-                if abs(x - reg["x"]) <= reg["w"] and abs(z - reg["z"]) <= reg["h"]:
-                    return (reg["kind"], reg["ident"])
-
-        return None
-
-    def execute_target_action(self, kind, ident, hand_idx=0):
-
-        # Visual feedback: Ripple animation at cursor location
-        cx, cz = self.cursors[hand_idx] if self.cursors[hand_idx] else (0, 0)
-        col = (0.0, 0.85, 1.0, 1.0) if hand_idx == 0 else (1.0, 0.35, 0.85, 1.0)
-        self._spawn_selection_ripple(cx, cz, col)
-
-        if kind == "note":
-            self.key_press_colors[ident] = col
-            self.play_note(ident)
-        elif kind == "chord":
-            self.play_chord(ident)
-        elif kind == "progression":
-            self.step_chord_progression()
-        elif kind == "track":
-            self.select_track(ident)
-            self.play_track()
-        elif kind == "patch":
-            self.set_synth_patch(ident)
-        elif kind == "action":
-            if ident == "mode_air":
-                self.set_play_mode("AIR_KEYBOARD")
-            elif ident == "mode_pinch":
-                self.set_play_mode("PINCH")
-            elif ident == "octave_down":
-                self.adjust_octave(-1)
-            elif ident == "octave_up":
-                self.adjust_octave(+1)
-            elif ident == "toggle_sustain":
-                self.toggle_sustain()
-            elif ident == "toggle_reverb":
-                self.toggle_reverb()
-            elif ident == "toggle_vfx":
-                self.toggle_visual_fx()
-            elif ident == "toggle_speed":
-                self.toggle_speed_mode()
-            elif ident == "play_track":
-                self.play_track()
-            elif ident == "pause_track":
-                self.pause_track()
-            elif ident == "stop_track":
-                self.stop_track()
-            elif ident == "toggle_mute":
-                self.toggle_mute()
-            elif ident == "vol_down":
-                self.adjust_track_volume(-0.10)
-            elif ident == "vol_up":
-                self.adjust_track_volume(+0.10)
-            elif ident == "toggle_record":
-                self.toggle_recording()
-            elif ident == "stop_record":
-                self.stop_recording()
-            elif ident == "save_record":
-                self.save_and_export_recording()
-            elif ident == "tab_major":
-                self.switch_chord_tab("MAJOR")
-            elif ident == "tab_minor":
-                self.switch_chord_tab("MINOR")
-            elif ident == "open_settings":
-                self.open_settings()
-            elif ident == "close_settings":
-                self.close_settings()
-            elif ident == "nav_drums":
-                self.base.set_mode("DRUMS")
-            elif ident == "nav_home":
-                self.base.set_mode("HOME")
-
-    # ========================================================
     # PLAY MODE & SENSITIVITY CONTROLS
     # ========================================================
 
@@ -1998,7 +2028,7 @@ class Piano:
             self.key_dwell_time = 0.085
             self.base_smoothing = 0.42
 
-        self.speed_btn["text"] = self.speed_mode
+        self.speed_btn["text"] = f"SPEED: {self.speed_mode}"
         if hasattr(self, "cfg_speed_btn"):
             self.cfg_speed_btn["text"] = f"SPEED: {self.speed_mode}"
 
@@ -2050,7 +2080,6 @@ class Piano:
         lines.setThickness(3)
         lines.setColor(*color)
 
-        # Concentric glowing rings
         for r_factor in (1.0, 0.45):
             r = radius * r_factor
             for i in range(25):
@@ -2062,7 +2091,6 @@ class Piano:
                 else:
                     lines.drawTo(px, 0, pz)
 
-        # Center crosshair dot
         lines.moveTo(x - 0.012, 0, z)
         lines.drawTo(x + 0.012, 0, z)
         lines.moveTo(x, 0, z - 0.012)
@@ -2086,9 +2114,10 @@ class Piano:
 
         reg = next((r for r in self.interactive_regions if r["kind"] == "note" and r["ident"] == note), None)
         if reg:
+            wpos = reg["widget"].getPos(self.base.aspect2d)
             self.active_beams.append({
-                "x": reg["x"],
-                "z": reg["z"] + reg["h"],
+                "x": wpos.getX(),
+                "z": wpos.getZ() + reg["h"],
                 "height": 0.02,
                 "max_height": 0.35,
                 "color": self.key_press_colors.get(note, (0.2, 0.85, 1.0, 1.0)),
@@ -2101,12 +2130,9 @@ class Piano:
             node.removeNode()
         self.pointer_nodes.clear()
 
-        # Update ripples & beams
         for child in self.fx_root.getChildren():
             child.removeNode()
 
-        # Draw active ripples
-        now = time.monotonic()
         alive_ripples = []
         for rip in self.button_ripples:
             rip["radius"] += 0.012
@@ -2126,7 +2152,6 @@ class Piano:
                 alive_ripples.append(rip)
         self.button_ripples = alive_ripples
 
-        # Draw active visual performance beams
         alive_beams = []
         for beam in self.active_beams:
             beam["height"] += 0.035
@@ -2150,7 +2175,6 @@ class Piano:
 
         now = time.monotonic()
 
-        # White keys
         for note, frame in self.white_frames.items():
             timer = self.key_press_timers.get(note, 0.0)
             if now - timer < 0.22:
@@ -2158,7 +2182,6 @@ class Piano:
             else:
                 frame["frameColor"] = (0.97, 0.96, 0.93, 1.0)
 
-        # Black keys
         for note, frame in self.black_frames.items():
             timer = self.key_press_timers.get(note, 0.0)
             if now - timer < 0.22:
@@ -2166,7 +2189,6 @@ class Piano:
             else:
                 frame["frameColor"] = (0.12, 0.12, 0.14, 1.0)
 
-        # Chord buttons reset to their original palette
         chord_dict = self.MAJOR_CHORDS if self.active_chord_tab == "MAJOR" else self.MINOR_CHORDS
         for name, btn in self.chord_buttons.items():
             if name in chord_dict:
@@ -2230,7 +2252,6 @@ class Piano:
             self.pinch_downs = [False, False]
             return
 
-        # Pre-process up to 2 hands (Left = Cyan/Blue, Right = Magenta/Pink)
         processed_hands = []
         for hand in hands_list[:2]:
             lm = self.landmarks(hand)
@@ -2246,10 +2267,8 @@ class Piano:
         ]
 
         for h_idx, (hand, lm, _) in enumerate(processed_hands):
-            # Index fingertip point
             raw_x, raw_z = self.screen_point(lm[8])
 
-            # Adaptive mouse-like velocity filter (fast = low latency, slow = steady precision)
             if self.cursors[h_idx] is None:
                 self.cursors[h_idx] = (raw_x, raw_z)
                 self.cursor_velocities[h_idx] = 0.0
@@ -2258,7 +2277,6 @@ class Piano:
                 dist = math.hypot(raw_x - old_x, raw_z - old_z)
                 self.cursor_velocities[h_idx] = dist
 
-                # Scale smoothing dynamically based on movement speed
                 adaptive_alpha = min(0.85, max(self.base_smoothing, self.base_smoothing + dist * 3.5))
                 self.cursors[h_idx] = (
                     old_x + (raw_x - old_x) * adaptive_alpha,
@@ -2331,19 +2349,16 @@ class Piano:
 
     def _update_telemetry(self, now):
 
-        # Decay VU level
         self.vu_level = max(0.0, self.vu_level - 0.04)
         bars_count = int(self.vu_level * 16)
         bars_str = "|" * bars_count + " " * (16 - bars_count)
         self.rec_vu_label["text"] = f"[{bars_str}]"
 
-        # Decay Real-time Audio Spectrum Bands & Update LCD Display
         spectrum_chars = [" ", ".", ":", "|", "||", "|||", "||||", "|||||"]
         spec_text = []
         for i in range(len(self.spectrum_bands)):
-            # If backing track is playing, add rhythmic energy
             if self.track_channel and not self.track_paused:
-                self.spectrum_bands[i] = max(self.spectrum_bands[i], np.random.uniform(0.15, 0.65))
+                self.spectrum_bands[i] = max(self.spectrum_bands[i], np.random.uniform(0.20, 0.70))
             else:
                 self.spectrum_bands[i] = max(0.0, self.spectrum_bands[i] - 0.06)
 
@@ -2352,14 +2367,12 @@ class Piano:
 
         self.spectrum_label["text"] = " ".join(spec_text)
 
-        # Track playback elapsed time
         if self.track_channel and not self.track_paused:
             elapsed = time.monotonic() - self.track_start_time
             cur_sec = int(elapsed % self.track_total_duration)
             tot_sec = int(self.track_total_duration)
             self.track_progress_label["text"] = f"{cur_sec//60:02d}:{cur_sec%60:02d} / {tot_sec//60:02d}:{tot_sec%60:02d}"
 
-        # Recording timer
         if self.is_recording:
             elapsed = int(now - self.record_start_time)
             mins = elapsed // 60
@@ -2433,6 +2446,15 @@ class Piano:
     def cleanup(self):
 
         self.hide()
+
+    def _navigate_to(self, mode_name):
+        """Safely navigate to another screen mode in HoloHand."""
+        if hasattr(self.base, 'set_mode'):
+            self.base.set_mode(mode_name)
+        elif hasattr(self.base, 'app') and hasattr(self.base.app, 'set_mode'):
+            self.base.app.set_mode(mode_name)
+        else:
+            print(f"[Piano] Mode navigation: {mode_name}")
         self.pointer_root.removeNode()
         self.fx_root.removeNode()
         self.frame.destroy()

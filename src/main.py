@@ -47,14 +47,19 @@ class HoloHandApp(ShowBase):
         print("=" * 55)
 
         # -----------------------------------------
-        # WINDOW
+        # WINDOW (FULLSCREEN BY DEFAULT)
         # -----------------------------------------
         props = WindowProperties()
-        props.setSize(1280, 720)
+        props.setSize(1920, 1080)
+        props.setFullscreen(True)
         props.setTitle("HoloHand AI - Gesture Interface")
         props.setCursorHidden(False)
         if hasattr(self.win, "requestProperties"):
             self.win.requestProperties(props)
+
+        self.is_fullscreen = True
+        self.accept("f11", self.toggle_fullscreen)
+        self.accept("f", self.toggle_fullscreen)
 
         self.disableMouse()
         self.setup_3d_world()
@@ -282,6 +287,18 @@ class HoloHandApp(ShowBase):
             self.nav_buttons["PIANO"].hide()
             self.nav_buttons["DRUMS"].hide()
             self.nav_buttons["HOME"].show()
+
+    def toggle_fullscreen(self):
+        self.is_fullscreen = not self.is_fullscreen
+        props = WindowProperties()
+        props.setFullscreen(self.is_fullscreen)
+        if not self.is_fullscreen:
+            props.setSize(1280, 720)
+        else:
+            props.setSize(1920, 1080)
+        if hasattr(self.win, "requestProperties"):
+            self.win.requestProperties(props)
+        print("Fullscreen toggled:", self.is_fullscreen)
 
     # ========================================================
     # MODE SWITCHING
