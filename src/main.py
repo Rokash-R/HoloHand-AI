@@ -1,4 +1,3 @@
-
 # ============================================================
 # HOLOHAND AI - STAGE 2
 # HOLOGRAPHIC HAND + CURSOR + PINCH NAVIGATION
@@ -223,8 +222,10 @@ class HoloHandApp(ShowBase):
 
         # Normalized positions on aspect2d.
         self.nav_targets = {
-            "PIANO": (-0.60, -0.72),
-            "DRUMS": (0.60, -0.72),
+            "PIANO": (-0.45, 0.25),
+            "DRUMS": (0.45, 0.25),
+            "HOLOLAB": (-0.45, -0.25),
+            "AIR": (0.45, -0.25),
             "HOME": (0.0, -0.82)
         }
 
@@ -247,6 +248,19 @@ class HoloHandApp(ShowBase):
             "HOME",
             0.0,
             -0.82
+        )
+        # Coming soon modules – use placeholder buttons.
+        self.nav_buttons["HOLOLAB"] = self.make_button(
+            "HOLOLAB",
+            "HOLOLAB – COMING SOON",
+            -0.45,
+            -0.25
+        )
+        self.nav_buttons["AIR"] = self.make_button(
+            "AIR",
+            "AIR CONTROL – COMING SOON",
+            0.45,
+            -0.25
         )
 
     def make_button(self, mode, title, x, z):
@@ -272,21 +286,9 @@ class HoloHandApp(ShowBase):
         return button
 
     def update_navigation_ui(self):
-
-        if self.mode == "HOME":
-            self.nav_buttons["PIANO"].show()
-            self.nav_buttons["DRUMS"].show()
-            self.nav_buttons["HOME"].hide()
-
-        elif self.mode == "PIANO":
-            self.nav_buttons["PIANO"].hide()
-            self.nav_buttons["DRUMS"].hide()
-            self.nav_buttons["HOME"].hide()  # Piano workstation hosts its own professional dock
-
-        else:
-            self.nav_buttons["PIANO"].hide()
-            self.nav_buttons["DRUMS"].hide()
-            self.nav_buttons["HOME"].show()
+        # Hide navigation overlay buttons – we use Home UI cards for visual interaction.
+        for btn in self.nav_buttons.values():
+            btn.hide()
 
     def toggle_fullscreen(self):
         self.is_fullscreen = not self.is_fullscreen
@@ -495,13 +497,18 @@ class HoloHandApp(ShowBase):
         if self.cursor_position is None:
             return
 
+        # A pinch that just played a drum must never also press HOME.
+        if self.mode == "DRUMS" and self.drums_ui.recent_hit(0.35):
+            return
+
         cx, cz = self.cursor_position
 
         # Check only visible navigation targets.
         if self.mode == "HOME":
-            available = ("PIANO", "DRUMS")
+            available = ("PIANO", "DRUMS", "HOLOLAB", "AIR")
         else:
             available = ("HOME",)
+
 
         for mode in available:
 
@@ -652,8 +659,8 @@ class HoloHandApp(ShowBase):
             self.piano_ui.update(hands)
 
         elif self.mode == "DRUMS":
-            primary = hands[0] if isinstance(hands, (list, tuple)) and len(hands) > 0 else hands
-            self.drums_ui.update(primary)
+            # Stage 2: the Drums Studio receives every tracked hand (or None).
+            self.drums_ui.update(hands)
 
     # ========================================================
     # EXIT AND CLEANUP
