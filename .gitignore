@@ -3,4 +3,13 @@ __pycache__/
 *.pyc
 .vscode/
 
-recordings/*.wav
+# Large media files & archives (Do not commit to GitHub)
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.zip
+*.tar.gz
+
+# User audio outputs
+recordings/

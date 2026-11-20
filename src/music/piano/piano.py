@@ -139,7 +139,7 @@ class Piano:
         self.key_dwell_time = 0.085
         self.base_smoothing = 0.42
 
-        # Per-hand tracking state (Hand 0: Left/Blue, Hand 1: Right/Pink)
+        # Per-hand tracking state (Hand 0: Left, Hand 1: Right)
         self.max_hands = 2
         self.cursors = [None, None]
         self.cursor_velocities = [0.0, 0.0]
@@ -149,11 +149,15 @@ class Piano:
         self.pinch_downs = [False, False]
         self.last_actions = [0.0, 0.0]
         self.last_valid_targets = [None, None]
+        self.hand_anchors = [None, None]
+        self.hand_last_seen = [0.0, 0.0]
+        self.HAND_LOSS_GRACE = 0.25
 
         # Pinch detection thresholds
-        self.pinch_on = 0.32
-        self.pinch_off = 0.45
+        self.pinch_on = 0.38
+        self.pinch_off = 0.50
         self.action_cooldown = 0.16
+        self.smoothed_pinch_ratios = [None, None]
 
         # Key press visual illumination timers & colors
         self.key_press_timers = {}
@@ -231,13 +235,13 @@ class Piano:
 
         # High priority pointer root (always top)
         self.pointer_root = base.aspect2d.attachNewNode("PianoFingerPointers")
-        self.pointer_root.setBin("fixed", 120)
+        self.pointer_root.setBin("fixed", 210)
         self.pointer_root.setDepthTest(False)
         self.pointer_root.setDepthWrite(False)
 
         # Visual Performance effect root
         self.fx_root = base.aspect2d.attachNewNode("PianoVisualFX")
-        self.fx_root.setBin("fixed", 110)
+        self.fx_root.setBin("fixed", 205)
 
         # Pre-load initial backing track
         self._load_active_track()
@@ -1794,21 +1798,30 @@ class Piano:
         # 1. Black keys priority
         for reg in self.interactive_regions:
             if reg["kind"] == "note" and reg["black"]:
-                wpos = reg["widget"].getPos(self.base.aspect2d)
+                wpos = reg.get("pos")
+                if wpos is None:
+                    wpos = reg["widget"].getPos(self.base.aspect2d)
+                    reg["pos"] = wpos
                 if abs(x - wpos.getX()) <= reg["w"] and abs(z - wpos.getZ()) <= reg["h"]:
                     return (reg["kind"], reg["ident"])
 
         # 2. Controls, Buttons, Chords & Patches
         for reg in self.interactive_regions:
             if reg["kind"] != "note":
-                wpos = reg["widget"].getPos(self.base.aspect2d)
+                wpos = reg.get("pos")
+                if wpos is None:
+                    wpos = reg["widget"].getPos(self.base.aspect2d)
+                    reg["pos"] = wpos
                 if abs(x - wpos.getX()) <= reg["w"] and abs(z - wpos.getZ()) <= reg["h"]:
                     return (reg["kind"], reg["ident"])
 
         # 3. White keys
         for reg in self.interactive_regions:
             if reg["kind"] == "note" and not reg["black"]:
-                wpos = reg["widget"].getPos(self.base.aspect2d)
+                wpos = reg.get("pos")
+                if wpos is None:
+                    wpos = reg["widget"].getPos(self.base.aspect2d)
+                    reg["pos"] = wpos
                 if abs(x - wpos.getX()) <= reg["w"] and abs(z - wpos.getZ()) <= reg["h"]:
                     return (reg["kind"], reg["ident"])
 
@@ -1817,7 +1830,7 @@ class Piano:
     def execute_target_action(self, kind, ident, hand_idx=0):
 
         cx, cz = self.cursors[hand_idx] if self.cursors[hand_idx] else (0, 0)
-        col = (0.0, 0.85, 1.0, 1.0) if hand_idx == 0 else (1.0, 0.35, 0.85, 1.0)
+        col = (0.1, 1.0, 1.0, 1.0)
         self._spawn_selection_ripple(cx, cz, col)
 
         if kind == "note":
@@ -2530,6 +2543,11 @@ class Piano:
 
     def toggle_speed_mode(self):
 
+        now = time.monotonic()
+        if hasattr(self, "_last_speed_toggle_time") and (now - self._last_speed_toggle_time < 0.25):
+            return
+        self._last_speed_toggle_time = now
+
         if self.speed_mode == "NORMAL":
             self.speed_mode = "RELAXED"
             self.key_dwell_time = 0.130
@@ -2716,7 +2734,7 @@ class Piano:
             return
 
         kind, ident = target
-        col = (0.30, 0.90, 1.0, 1.0) if hand_idx == 0 else (1.0, 0.35, 0.85, 1.0)
+        col = (0.15, 0.95, 1.0, 1.0)
 
         if kind == "chord":
             if ident in self.chord_buttons:
@@ -2737,6 +2755,55 @@ class Piano:
             self.white_frames[name]["frameColor"] = col
         elif name in self.black_frames:
             self.black_frames[name]["frameColor"] = col
+
+    def _assign_hands_to_slots(self, lms, now):
+        """
+        Assigns detected hand landmarks to stable slots (0 and 1).
+        Prevents hands from swapping identities and jumping when crossing or re-entering.
+        """
+        n = len(lms)
+        if n == 0:
+            return {}
+
+        pts = [(lm[9].x, lm[9].y) for lm in lms]
+
+        def get_anchor(slot_idx):
+            if self.hand_anchors[slot_idx] is not None and (now - self.hand_last_seen[slot_idx] <= 0.60):
+                return self.hand_anchors[slot_idx]
+            return None
+
+        a0, a1 = get_anchor(0), get_anchor(1)
+
+        def dist(p1, p2):
+            return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+        if n >= 2:
+            if a0 is not None and a1 is not None:
+                first_to_0 = (dist(pts[0], a0) + dist(pts[1], a1)) <= (dist(pts[0], a1) + dist(pts[1], a0))
+            elif a0 is not None:
+                first_to_0 = dist(pts[0], a0) <= dist(pts[1], a0)
+            elif a1 is not None:
+                first_to_0 = dist(pts[1], a1) <= dist(pts[0], a1)
+            else:
+                first_to_0 = pts[0][0] <= pts[1][0]
+
+            if first_to_0:
+                return {0: lms[0], 1: lms[1]}
+            else:
+                return {0: lms[1], 1: lms[0]}
+
+        # n == 1
+        p = pts[0]
+        if a0 is not None and a1 is not None:
+            slot = 0 if dist(p, a0) <= dist(p, a1) else 1
+        elif a0 is not None and dist(p, a0) < 0.45:
+            slot = 0
+        elif a1 is not None and dist(p, a1) < 0.45:
+            slot = 1
+        else:
+            slot = 0 if p[0] < 0.50 else 1
+
+        return {slot: lms[0]}
 
     # ========================================================
     # MAIN UPDATE LOOP
@@ -2760,28 +2827,34 @@ class Piano:
         else:
             hands_list = [hands]
 
-        if not hands_list:
-            self.cursors = [None, None]
-            self.current_targets = [None, None]
-            self.candidate_targets = [None, None]
-            self.pinch_downs = [False, False]
-            return
-
-        processed_hands = []
+        lms = []
         for hand in hands_list[:2]:
             lm = self.landmarks(hand)
             if lm is not None and len(lm) >= 21:
-                processed_hands.append((hand, lm, lm[8].x))
+                lms.append(lm)
 
-        if len(processed_hands) == 2:
-            processed_hands.sort(key=lambda item: item[2])
+        assigned = self._assign_hands_to_slots(lms, now)
 
+        # Original Holographic Bright Cyan color for hands in Piano studio
         hand_colors = [
-            (0.0, 0.85, 1.0, 1.0),   # Left Hand: Electric Blue
-            (1.0, 0.30, 0.85, 1.0)   # Right Hand: Vivid Pink
+            (0.0, 1.0, 1.0, 1.0),
+            (0.0, 1.0, 1.0, 1.0)
         ]
 
-        for h_idx, (hand, lm, _) in enumerate(processed_hands):
+        for h_idx in (0, 1):
+            lm = assigned.get(h_idx)
+            if lm is None:
+                if now - self.hand_last_seen[h_idx] > self.HAND_LOSS_GRACE:
+                    self.cursors[h_idx] = None
+                    self.current_targets[h_idx] = None
+                    self.candidate_targets[h_idx] = None
+                    self.pinch_downs[h_idx] = False
+                    self.smoothed_pinch_ratios[h_idx] = None
+                continue
+
+            self.hand_last_seen[h_idx] = now
+            self.hand_anchors[h_idx] = (lm[9].x, lm[9].y)
+
             raw_x, raw_z = self.screen_point(lm[8])
 
             if self.cursors[h_idx] is None:
@@ -2792,7 +2865,13 @@ class Piano:
                 dist = math.hypot(raw_x - old_x, raw_z - old_z)
                 self.cursor_velocities[h_idx] = dist
 
-                adaptive_alpha = min(0.85, max(self.base_smoothing, self.base_smoothing + dist * 3.5))
+                if dist > 0.08:
+                    adaptive_alpha = min(0.98, self.base_smoothing + dist * 3.5)
+                elif dist > 0.02:
+                    adaptive_alpha = min(0.92, self.base_smoothing + dist * 2.0)
+                else:
+                    adaptive_alpha = self.base_smoothing
+
                 self.cursors[h_idx] = (
                     old_x + (raw_x - old_x) * adaptive_alpha,
                     old_z + (raw_z - old_z) * adaptive_alpha
@@ -2807,55 +2886,67 @@ class Piano:
                 self.highlight_target(target, h_idx)
 
             # ------------------------------------
-            # MODE A: AIR-KEYBOARD MODE (DEFAULT HOVER-TO-PLAY)
+            # PINCH DETECTION (BOTH AIR & PINCH MODES)
+            # ------------------------------------
+            scale_a = self.distance(lm[5], lm[17])
+            scale_b = self.distance(lm[0], lm[9]) * 0.75
+            palm_scale = max(0.5 * (scale_a + self.distance(lm[0], lm[9])), max(scale_a, scale_b))
+
+            pinch_edge = False
+            if palm_scale >= 0.020:
+                pinch_distance = self.distance(lm[4], lm[8])
+                ratio = pinch_distance / palm_scale
+
+                if not hasattr(self, "smoothed_pinch_ratios") or self.smoothed_pinch_ratios is None:
+                    self.smoothed_pinch_ratios = [None, None]
+                if self.smoothed_pinch_ratios[h_idx] is None:
+                    self.smoothed_pinch_ratios[h_idx] = ratio
+                else:
+                    self.smoothed_pinch_ratios[h_idx] = 0.70 * ratio + 0.30 * self.smoothed_pinch_ratios[h_idx]
+                eff_ratio = self.smoothed_pinch_ratios[h_idx]
+
+                if not self.pinch_downs[h_idx]:
+                    if eff_ratio < self.pinch_on:
+                        self.pinch_downs[h_idx] = True
+                        pinch_edge = True
+                elif eff_ratio > self.pinch_off:
+                    self.pinch_downs[h_idx] = False
+
+            # Intentional PINCH selection on any button, chord, patch or note
+            if pinch_edge and target is not None:
+                if now - self.last_actions[h_idx] >= self.action_cooldown:
+                    if self.gesture_input_enabled:
+                        kind, ident = target
+                        self.execute_target_action(kind, ident, h_idx)
+                    self.last_actions[h_idx] = now
+                    self.current_targets[h_idx] = target
+
+            # ------------------------------------
+            # PLAY MODE EXECUTION
             # ------------------------------------
             if self.play_mode == "AIR_KEYBOARD":
                 if target is not None:
+                    kind, ident = target
                     if target != self.current_targets[h_idx]:
                         if self.candidate_targets[h_idx] != target:
                             self.candidate_targets[h_idx] = target
                             self.candidate_times[h_idx] = now
-                        elif now - self.candidate_times[h_idx] >= self.key_dwell_time:
-                            self.current_targets[h_idx] = target
-                            self.last_actions[h_idx] = now
-                            if self.gesture_input_enabled:
-                                kind, ident = target
-                                self.execute_target_action(kind, ident, h_idx)
+                        else:
+                            # Notes play fluidly with key_dwell_time (85ms)
+                            # Side bar buttons, chords, patches select quickly on intentional hover (0.30s) or PINCH
+                            req_dwell = self.key_dwell_time if kind == "note" else 0.30
+                            if now - self.candidate_times[h_idx] >= req_dwell:
+                                self.current_targets[h_idx] = target
+                                self.last_actions[h_idx] = now
+                                if self.gesture_input_enabled:
+                                    self.execute_target_action(kind, ident, h_idx)
+                                if kind != "note":
+                                    self.candidate_times[h_idx] = now + 999.0  # Lock until cursor leaves
                     else:
                         self.candidate_targets[h_idx] = target
                 else:
                     self.candidate_targets[h_idx] = None
                     self.current_targets[h_idx] = None
-
-            # ------------------------------------
-            # MODE B: PINCH-TO-PLAY MODE
-            # ------------------------------------
-            elif self.play_mode == "PINCH":
-                if target is not None:
-                    self.last_valid_targets[h_idx] = target
-
-                scale_a = self.distance(lm[5], lm[17])
-                scale_b = self.distance(lm[0], lm[9]) * 0.5
-                palm_scale = max(scale_a, scale_b)
-
-                if palm_scale >= 0.025:
-                    pinch_distance = self.distance(lm[4], lm[8])
-                    ratio = pinch_distance / palm_scale
-
-                    if not self.pinch_downs[h_idx]:
-                        if ratio < self.pinch_on:
-                            self.pinch_downs[h_idx] = True
-                            active_target = target or self.last_valid_targets[h_idx]
-                            if (
-                                active_target is not None
-                                and now - self.last_actions[h_idx] >= self.action_cooldown
-                            ):
-                                if self.gesture_input_enabled:
-                                    kind, ident = active_target
-                                    self.execute_target_action(kind, ident, h_idx)
-                                self.last_actions[h_idx] = now
-                    elif ratio > self.pinch_off:
-                        self.pinch_downs[h_idx] = False
 
     def _trigger_spectrum_peak(self):
 
@@ -2931,6 +3022,7 @@ class Piano:
         self.current_targets = [None, None]
         self.candidate_targets = [None, None]
         self.pinch_downs = [False, False]
+        self.smoothed_pinch_ratios = [None, None]
 
         if hasattr(self.base, "win") and self.base.win:
             self.base.win.setClearColor(Vec4(0.02, 0.025, 0.035, 1.0))
@@ -2985,6 +3077,7 @@ class Piano:
         self.current_targets = [None, None]
         self.candidate_targets = [None, None]
         self.pinch_downs = [False, False]
+        self.smoothed_pinch_ratios = [None, None]
 
     def cleanup(self):
 
@@ -2992,12 +3085,10 @@ class Piano:
 
     def _navigate_to(self, mode_name):
         """Safely navigate to another screen mode in HoloHand."""
+        self.hide()
         if hasattr(self.base, 'set_mode'):
             self.base.set_mode(mode_name)
         elif hasattr(self.base, 'app') and hasattr(self.base.app, 'set_mode'):
             self.base.app.set_mode(mode_name)
         else:
             print(f"[Piano] Mode navigation: {mode_name}")
-        self.pointer_root.removeNode()
-        self.fx_root.removeNode()
-        self.frame.destroy()

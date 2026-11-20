@@ -330,15 +330,15 @@ class Drums:
 
     CURSOR_GAIN = 1.0           # keep >= 1.0 so drum zones never meet the HOME area
     FRAME_ASPECT = 4.0 / 3.0    # main.py opens the camera at 320x240
-    PINCH_ON = 0.30             # pinch closes below this (relative to palm size)
-    PINCH_OFF = 0.48            # pinch opens above this (hysteresis)
+    PINCH_ON = 0.38             # pinch closes below this (relative to palm size)
+    PINCH_OFF = 0.50            # pinch opens above this (hysteresis)
     HIT_COOLDOWN = 0.10         # seconds, per hand
     LOOKBACK = 0.10             # seconds: where the cursor was before the pinch closed
     LOOKBACK_STILL = 0.06       # use that earlier spot only if the hand was this still
-    SMOOTH_MIN = 0.32           # cursor smoothing at rest (lower = smoother)
-    SMOOTH_GAIN = 10.0          # how quickly smoothing relaxes when moving fast
+    SMOOTH_MIN = 0.35           # cursor smoothing at rest (lower = smoother)
+    SMOOTH_GAIN = 3.5           # how quickly smoothing relaxes when moving fast
     HAND_MEMORY = 0.6           # seconds a hand's identity is remembered
-    LOSS_GRACE = 0.12           # seconds a cursor survives a tracking dropout
+    LOSS_GRACE = 0.30           # seconds a cursor survives a tracking dropout
     HIT_MARGIN_DRUM = 0.010     # forgiveness around drums (screen units)
     HIT_MARGIN_CYMBAL = 0.022   # thin cymbals get a bit more
     HOVER_STICKY = 0.018        # extra edge hold so highlights don't flicker
@@ -402,6 +402,7 @@ class Drums:
         self.last_hit_id = None
         self.last_color = self.CYAN
         self.last_hit_time = -999.0
+        self.accent_bar = None
         self._accent_active = False
         self.pad_parts = {}
         self._buttons = []
@@ -463,6 +464,9 @@ class Drums:
         self._refresh_volume()
         self._refresh_audio_status()
         self._refresh_settings_ui()
+
+        if hasattr(self.base, "accept"):
+            self.base.accept("mouse1", self._on_mouse_click)
 
         self.base.taskMgr.add(self._animate, "DrumsAnimation")
         self.base.taskMgr.add(self._metro_tick, "DrumsMetronome")
@@ -593,12 +597,13 @@ class Drums:
 
     def _navigate_to(self, mode_name):
         """Safely navigate to another screen mode in HoloHand."""
+        target_mode = mode_name.upper() if isinstance(mode_name, str) else mode_name
         if hasattr(self.base, "set_mode"):
-            self.base.set_mode(mode_name)
+            self.base.set_mode(target_mode)
         elif hasattr(self.base, "app") and hasattr(self.base.app, "set_mode"):
-            self.base.app.set_mode(mode_name)
+            self.base.app.set_mode(target_mode)
         else:
-            print(f"[Drums] Mode navigation: {mode_name}")
+            print(f"[Drums] Mode navigation: {target_mode}")
 
     def _panel_chassis(self, cx, title):
         """Dark navy dock with cyan / gold trim, same style as Piano side docks."""
@@ -620,32 +625,165 @@ class Drums:
         self.drum_world.reparentTo(self.base.render)
 
     # ====================================================
-    # CENTRE CONSOLE: TITLE, STATUS STRIP
+    # REALISTIC MUSIC RECORDING STUDIO ENVIRONMENT & CONSOLE
     # ====================================================
 
+    def _build_studio_background(self):
+        """Constructs a realistic, premium music recording studio environment.
+        Features dark acoustic foam wall panels, subtle professional studio lighting,
+        natural depth, and a dark studio floor behind the drum kit."""
+        L = self._layers
+        floor_layer = L["floor"]
+
+        # 1. Main Studio Acoustic Wall (Deep matte charcoal backdrop)
+        self._card("floor", -0.96, 0.96, -0.22, 0.98, (0.022, 0.025, 0.030, 0.98))
+
+        # 2. Studio Acoustic Foam Soundproofing Panels (SIDE FLANKS ONLY - Left & Right)
+        # Keeps center stage clear for optimal drum kit visibility and hand air-strikes
+        side_flanks = [
+            (-0.95, -0.65),  # Left side flank
+            (0.65, 0.95)     # Right side flank
+        ]
+
+        tile_segs = []
+        for flank_x0, flank_x1 in side_flanks:
+            num_cols = 3
+            num_rows = 5
+            col_w = (flank_x1 - flank_x0) / num_cols
+            row_h = (0.78 - (-0.20)) / num_rows
+            pad_gap = 0.005
+
+            for r in range(num_rows):
+                t_z0 = -0.20 + r * row_h + pad_gap
+                t_z1 = -0.20 + (r + 1) * row_h - pad_gap
+                for c in range(num_cols):
+                    t_x0 = flank_x0 + c * col_w + pad_gap
+                    t_x1 = flank_x0 + (c + 1) * col_w - pad_gap
+
+                    self._card("floor", t_x0, t_x1, t_z0, t_z1, (0.035, 0.038, 0.046, 0.90))
+
+                    if (r + c) % 2 == 0:
+                        mid_z = (t_z0 + t_z1) * 0.5
+                        tile_segs.append(((t_x0 + 0.004, mid_z), (t_x1 - 0.004, mid_z)))
+                    else:
+                        mid_x = (t_x0 + t_x1) * 0.5
+                        tile_segs.append(((mid_x, t_z0 + 0.004), (mid_x, t_z1 - 0.004)))
+
+        if tile_segs:
+            self._line_node(floor_layer, tile_segs, (0.055, 0.060, 0.072, 0.45), 1.0)
+
+        # 3. Acoustic Wood Diffuser Side Accents (Natural walnut slats at wall borders)
+        slat_segs = []
+        for side in (-1.0, 1.0):
+            bx0 = side * 0.83 if side > 0 else -0.96
+            bx1 = side * 0.96 if side > 0 else -0.83
+            self._card("floor", min(bx0, bx1), max(bx0, bx1), -0.22, 0.78, (0.018, 0.020, 0.025, 0.95))
+            for i in range(5):
+                sx = min(bx0, bx1) + i * 0.024 + 0.006
+                slat_segs.append(((sx, -0.21), (sx, 0.77)))
+        if slat_segs:
+            self._line_node(floor_layer, slat_segs, (0.13, 0.09, 0.06, 0.55), 2.5)
+
+        # 4. Realistic Dark Studio Floor (z: -0.72 to -0.22)
+        # Deep dark studio floor deck
+        self._card("floor", -0.96, 0.96, -0.72, -0.22, (0.018, 0.020, 0.024, 0.98))
+
+        # Baseboard runner connecting wall and floor
+        self._card("floor", -0.96, 0.96, -0.228, -0.220, (0.045, 0.050, 0.060, 0.95))
+        self._card("floor", -0.96, 0.96, -0.220, -0.217, (0.075, 0.082, 0.095, 0.75))
+
+        # Subtle natural floor plank seams
+        floor_lines = [
+            ((-0.96, -0.32), (0.96, -0.32)),
+            ((-0.96, -0.43), (0.96, -0.43)),
+            ((-0.96, -0.55), (0.96, -0.55)),
+            ((-0.96, -0.68), (0.96, -0.68)),
+        ]
+        self._line_node(floor_layer, floor_lines, (0.012, 0.014, 0.018, 0.65), 1.5)
+
+        # 5. Soft Professional Studio Lighting (Warm key light behind the drum kit)
+        key_light = _disc_geom(0.78, 48, 0.09, 0.0, 1.0, 0.0)
+        key_light.reparentTo(floor_layer)
+        key_light.setPos(0.0, 0, 0.08)
+        key_light.setScale(1.10, 1.0, 0.60)
+        key_light.setColorScale(0.95, 0.88, 0.72, 1.0)
+        _make_additive(key_light)
+
+        # Subtle ambient fill glow
+        fill_light = _disc_geom(0.95, 48, 0.04, 0.0, 1.0, 0.0)
+        fill_light.reparentTo(floor_layer)
+        fill_light.setPos(0.0, 0, -0.05)
+        fill_light.setScale(1.0, 1.0, 0.40)
+        fill_light.setColorScale(0.55, 0.70, 0.90, 1.0)
+        _make_additive(fill_light)
+
+    def _build_background_hologram(self):
+        """Compatibility alias: builds the realistic studio background."""
+        self._build_studio_background()
+
     def _build_console(self):
-        # Translucent console body so the holographic hand stays visible behind it.
-        self._card("floor", -0.96, 0.96, -0.72, 0.94, (0.03, 0.04, 0.07, 0.30))
+        # 1. Realistic recording studio environment
+        self._build_studio_background()
+
+        # Subtle console border outline
         for (l, r, b, t) in (
-            (-0.96, 0.96, 0.934, 0.94),
-            (-0.96, -0.954, -0.72, 0.94),
-            (0.954, 0.96, -0.72, 0.94),
+            (-0.96, 0.96, 0.976, 0.980),
+            (-0.96, -0.954, -0.72, 0.980),
+            (0.954, 0.96, -0.72, 0.980),
         ):
-            self._card("floor", l, r, b, t, (0.10, 0.45, 0.75, 0.55))
+            self._card("floor", l, r, b, t, (0.08, 0.18, 0.30, 0.55))
 
-        # Header plate
-        self._card("panel", -0.94, 0.94, 0.80, 0.93, (0.02, 0.03, 0.05, 0.82))
-        self._label("HOLOHAND  AI", 0.0, 0.872, 0.052, self.WHITE)
-        self._label("DRUM STUDIO", 0.0, 0.822, 0.028, (0.35, 0.78, 1.0, 1.0))
+        # ====================================================
+        # TOP FEATURE CONTROL PODS (Dedicated, well-spaced compartments)
+        # ====================================================
 
-        # Stage 3: active play mode (left) and metronome state (right)
-        self._label("PLAY MODE", -0.66, 0.889, 0.020, self.GREY)
-        self.mode_value = self._label("AIR MODE", -0.66, 0.846, 0.036, self.CYAN)
-        self._label("METRONOME", 0.66, 0.889, 0.020, self.GREY)
-        self.metro_value = self._label("OFF", 0.66, 0.846, 0.036, self.GREY)
+        # POD 1: PLAY MODE & SENSITIVITY (x: -0.94 to -0.36, z: 0.800 to 0.970)
+        self._card("panel", -0.94, -0.36, 0.800, 0.970, (0.025, 0.035, 0.06, 0.92))
+        self._card("panel", -0.94, -0.36, 0.966, 0.970, (0.0, 0.85, 1.0, 0.90))
+        self._card("panel", -0.94, -0.36, 0.880, 0.883, (0.08, 0.22, 0.40, 0.60))
 
-        # Accent bar under the header - flashes with the colour of the last hit
-        self.accent_bar = self._card("rows", -0.94, 0.94, 0.792, 0.800, (0.0, 0.85, 1.0, 0.70))
+        # Mode row (top) - prominent font size as requested
+        self._label("MODE:", -0.89, 0.925, 0.024, self.GOLD, TextNode.ALeft)
+        self.mode_value = self._label("AIR MODE", -0.80, 0.925, 0.046, self.CYAN, TextNode.ALeft)
+        self._seg_button("air", -0.52, 0.925, 0.045, 0.020, "AIR", 0.022, self.set_play_mode, ["AIR"])
+        self._seg_button("pinch", -0.42, 0.925, 0.050, 0.020, "PINCH", 0.022, self.set_play_mode, ["PINCH"])
+
+        # Sensitivity row (bottom)
+        self._label("SENSITIVITY", -0.89, 0.840, 0.020, (0.60, 0.75, 0.90, 1.0), TextNode.ALeft)
+        self._seg_button("sens_LOW", -0.66, 0.840, 0.038, 0.018, "LOW", 0.019, self.set_sensitivity, ["LOW"])
+        self._seg_button("sens_NORMAL", -0.56, 0.840, 0.050, 0.018, "NORMAL", 0.019, self.set_sensitivity, ["NORMAL"])
+        self._seg_button("sens_HIGH", -0.45, 0.840, 0.040, 0.018, "HIGH", 0.019, self.set_sensitivity, ["HIGH"])
+
+        # POD 2: STUDIO BRANDING & CORE NAVIGATION (x: -0.34 to 0.06, z: 0.800 to 0.970)
+        self._card("panel", -0.34, 0.06, 0.800, 0.970, (0.02, 0.03, 0.055, 0.92))
+        self._card("panel", -0.34, 0.06, 0.966, 0.970, (0.0, 0.85, 1.0, 0.90))
+        self._card("panel", -0.34, 0.06, 0.880, 0.883, (0.08, 0.22, 0.40, 0.60))
+
+        # Branding
+        self._label("HOLOHAND  AI", -0.14, 0.932, 0.038, self.WHITE)
+        self._label("DRUM STUDIO", -0.14, 0.898, 0.022, (0.35, 0.78, 1.0, 1.0))
+        # Navigation & Reset buttons
+        self._button(-0.25, 0.840, 0.055, 0.019, "HOME", 0.020, (0.12, 0.16, 0.24), self._navigate_to, ["HOME"])
+        self._seg_button("reset_cfg", -0.05, 0.840, 0.075, 0.019, "RESET ALL", 0.019, self.reset_settings)
+
+        # POD 3: METRONOME & VISUAL EFFECTS (x: 0.08 to 0.94, z: 0.800 to 0.970)
+        self._card("panel", 0.08, 0.94, 0.800, 0.970, (0.025, 0.035, 0.06, 0.92))
+        self._card("panel", 0.08, 0.94, 0.966, 0.970, (0.85, 0.70, 0.25, 0.90))
+        self._card("panel", 0.08, 0.94, 0.880, 0.883, (0.08, 0.22, 0.40, 0.60))
+
+        # Metronome row (top)
+        self._seg_button("metro", 0.22, 0.925, 0.075, 0.020, "METRONOME", 0.020, self.toggle_metronome)
+        # Metronome indicator lamp
+        self.metro_lamp = self._card("rows", 0.315, 0.335, 0.913, 0.937, (0.10, 0.12, 0.16, 0.85))
+        # Tempo controls
+        self._seg_button("tempo_dn", 0.40, 0.925, 0.028, 0.020, "-", 0.024, self.adjust_tempo, [-self.TEMPO_STEP])
+        self.tempo_value = self._label(f"{self.tempo} BPM", 0.50, 0.925, 0.025, self.WHITE)
+        self._seg_button("tempo_up", 0.60, 0.925, 0.028, 0.020, "+", 0.024, self.adjust_tempo, [self.TEMPO_STEP])
+        self.metro_value = self._label("OFF", 0.76, 0.925, 0.026, self.GREY)
+
+        # Visual Effects & Audio Status row (bottom)
+        self._seg_button("fx", 0.22, 0.840, 0.065, 0.018, "EFFECTS", 0.019, self.toggle_effects)
+        self._label("DYNAMIC HOLOGRAPHIC RIG", 0.60, 0.840, 0.020, (0.40, 0.75, 1.0, 0.85))
 
         # Status strip: INPUT | LAST HIT | AUDIO
         self._card("panel", -0.94, 0.94, 0.685, 0.778, (0.035, 0.045, 0.065, 0.84))
@@ -654,7 +792,7 @@ class Drums:
         self.input_value = self._label("SHOW YOUR HANDS", -0.62, 0.710, 0.032, self.GREY)
 
         self._card("rows", -0.27, 0.27, 0.692, 0.771, (0.0, 0.04, 0.08, 0.92))
-        self._card("rows", -0.27, 0.27, 0.692, 0.695, (0.0, 0.85, 1.0, 0.8))
+        self.accent_bar = self._card("rows", -0.27, 0.27, 0.692, 0.696, (0.0, 0.85, 1.0, 0.80))
         self._label("LAST HIT", 0.0, 0.757, 0.022, self.GREY)
         self.feedback_display = self._label("READY", 0.0, 0.719, 0.052, self.CYAN)
 
@@ -672,18 +810,19 @@ class Drums:
     def _build_kit(self):
         L = self._layers
 
-        # Stage platform the kit stands on
-        plat = _disc_geom(1.0, 64, 0.55, 0.30)
+        # Professional studio drum rug / non-slip stage mat
+        plat = _disc_geom(1.0, 64, 0.90, 0.75)
         plat.reparentTo(L["platform"])
         plat.setPos(0.0, 0, self.FLOOR_Z - 0.012)
-        plat.setScale(0.90, 1.0, 0.075)
-        plat.setColorScale(0.08, 0.20, 0.40, 0.90)
+        plat.setScale(0.92, 1.0, 0.080)
+        plat.setColorScale(0.065, 0.070, 0.078, 0.96)
 
-        edge = _ring_geom(0.985, 1.0, 72)
+        # Clean stitched rug border trim (matte dark charcoal, no artificial glow)
+        edge = _ring_geom(0.975, 1.0, 72)
         edge.reparentTo(L["platform"])
         edge.setPos(0.0, 0, self.FLOOR_Z - 0.012)
-        edge.setScale(0.90, 1.0, 0.075)
-        edge.setColorScale(self.CYAN[0], self.CYAN[1], self.CYAN[2], 0.55)
+        edge.setScale(0.92, 1.0, 0.080)
+        edge.setColorScale(0.12, 0.13, 0.15, 0.85)
 
         # Hardware first (it sits behind the instruments), then the pads.
         for pad in self.PADS:
@@ -988,18 +1127,14 @@ class Drums:
             parts["row_base"] = base
             parts["row_dot"] = dot
 
-        # How to play (lines 2 and 3 follow the active play mode)
-        self._card("rows", cx - 0.32, cx + 0.32, -0.325, -0.321, (0.85, 0.70, 0.25, 0.7))
-        self._label("HOW TO PLAY", cx, -0.360, 0.030, self.GOLD)
-        hint = (0.82, 0.90, 1.0, 0.95)
-        self._howto = [
-            self._label("POINT WITH YOUR INDEX FINGER", cx, -0.415, 0.025, hint),
-            self._label("", cx, -0.455, 0.025, hint),
-            self._label("", cx, -0.495, 0.025, hint),
-        ]
-        self._label("CYAN = LEFT HAND   PINK = RIGHT HAND", cx, -0.540, 0.025, hint)
-        self._label("PINCH OVER A BUTTON TO PRESS IT", cx, -0.578, 0.022, self.CYAN_DIM)
-        self._label("H KEY OR PINCH HOME BUTTON = EXIT", cx, -0.620, 0.026, self.CYAN_DIM)
+        # Hidden HOW-TO labels (kept for internal logic but invisible)
+        hint = (0, 0, 0, 0)  # fully transparent
+        # index 0 – original instructional text (kept invisible)
+        lbl0 = self._label("POINT WITH YOUR INDEX FINGER", cx, -0.415, 0.025, hint)
+        lbl1 = self._label("", cx, -0.455, 0.025, hint)
+        lbl2 = self._label("", cx, -0.495, 0.025, hint)
+        # Store in self._howto to avoid AttributeError; labels are invisible
+        self._howto = [lbl0, lbl1, lbl2]
 
     # ====================================================
     # RIGHT PANEL: PERFORMANCE
@@ -1075,50 +1210,8 @@ class Drums:
     # |x| >= 0.34 and nothing overlaps it.
 
     def _build_settings_dock(self):
-        # Integrated settings panel inside the right-side dock (replaces bottom strip)
-        cx = self.RIGHT_X
-        hw = self.PANEL_HW
-        # Use rows near the bottom of the right panel
-        z1 = self.PANEL_BOTTOM + 0.10   # first row inside right panel
-        z2 = self.PANEL_BOTTOM + 0.00   # second row a bit higher
-        hh = 0.040
-
-        # background panel for settings (matches right panel style)
-        self._card("panel", cx - hw, cx + hw, self.PANEL_BOTTOM, self.PANEL_BOTTOM + 0.20,
-                  (0.02, 0.03, 0.05, 0.82))
-        self._card("panel", cx - hw, cx + hw, self.PANEL_BOTTOM + 0.20, self.PANEL_BOTTOM + 0.22,
-                  (0.10, 0.45, 0.75, 0.70))
-
-        # ---- left cluster: play mode + AIR sensitivity ----
-        self._label("PLAY MODE", cx - 0.90, z1, 0.024, self.GREY, TextNode.ALeft)
-        self._seg_button("air", cx - 0.60, z1, 0.10, hh, "AIR MODE", 0.026,
-                         self.set_play_mode, ["AIR"])
-        self._seg_button("pinch", cx - 0.39, z1, 0.10, hh, "PINCH MODE", 0.026,
-                         self.set_play_mode, ["PINCH"])
-
-        self._label("AIR SENSITIVITY", cx - 0.90, z2, 0.020, self.GREY, TextNode.ALeft)
-        self._seg_button("sens_LOW", cx - 0.62, z2, 0.045, hh, "LOW", 0.024,
-                         self.set_sensitivity, ["LOW"])
-        self._seg_button("sens_NORMAL", cx - 0.49, z2, 0.070, hh, "NORMAL", 0.024,
-                         self.set_sensitivity, ["NORMAL"])
-        self._seg_button("sens_HIGH", cx - 0.36, z2, 0.045, hh, "HIGH", 0.024,
-                         self.set_sensitivity, ["HIGH"])
-
-        # ---- right cluster: metronome, tempo, effects, reset ----
-        self._label("METRONOME", cx + 0.35, z1, 0.024, self.GREY, TextNode.ALeft)
-        self.metro_lamp = self._card("rows2", cx + 0.503, cx + 0.527, z1 - 0.012, z1 + 0.012,
-                                     (0.20, 0.24, 0.30, 1.0))
-        self._seg_button("metro", cx + 0.62, z1, 0.070, hh, "OFF", 0.026, self.toggle_metronome)
-        self._seg_button("tempo_dn", cx + 0.74, z1, 0.035, hh, "-", 0.040,
-                         self.adjust_tempo, [-self.TEMPO_STEP])
-        self.tempo_value = self._label("100 BPM", cx + 0.835, z1, 0.024, self.WHITE)
-        self._seg_button("tempo_up", cx + 0.93, z1, 0.035, hh, "+", 0.040,
-                         self.adjust_tempo, [self.TEMPO_STEP])
-
-        self._label("EFFECTS", cx + 0.35, z2, 0.024, self.GREY, TextNode.ALeft)
-        self._seg_button("fx", cx + 0.62, z2, 0.070, hh, "ON", 0.026, self.toggle_effects)
-        self._seg_button("reset_cfg", cx + 0.845, z2, 0.120, hh, "RESET SETTINGS", 0.020,
-                         self.reset_settings)
+        # All functional controls are now on the top toolbar; the bottom dock is intentionally left empty.
+        pass
 
     # ---- settings actions (used by mouse, pinch and the dock buttons) ----
 
@@ -1181,27 +1274,33 @@ class Drums:
             sel = (level == self.sensitivity)
             self._paint("sens_" + level, on if sel else off, sel)
 
-        self._set_text(self._seg["metro"]["lbl"], "ON" if self.metro_on else "OFF")
-        self._paint("metro", amber if self.metro_on else off, self.metro_on)
-        self._set_text(self._seg["fx"]["lbl"], "ON" if self.fx_enabled else "OFF")
-        self._paint("fx", on if self.fx_enabled else off, self.fx_enabled)
+        if "metro" in self._seg:
+            self._set_text(self._seg["metro"]["lbl"], "METRO: ON" if self.metro_on else "METRO: OFF")
+            self._paint("metro", amber if self.metro_on else off, self.metro_on)
+        if "fx" in self._seg:
+            self._set_text(self._seg["fx"]["lbl"], "FX: ON" if self.fx_enabled else "FX: OFF")
+            self._paint("fx", on if self.fx_enabled else off, self.fx_enabled)
         for key in ("tempo_dn", "tempo_up", "reset_cfg"):
-            self._paint(key, neutral, True)
-        self._set_text(self.tempo_value, "%d BPM" % self.tempo)
+            if key in self._seg:
+                self._paint(key, neutral, True)
+        if hasattr(self, "tempo_value") and self.tempo_value:
+            self._set_text(self.tempo_value, "%d BPM" % self.tempo)
 
         # header indicators
-        if air:
-            self._set_text(self.mode_value, "AIR MODE")
-            self.mode_value["text_fg"] = Vec4(self.CYAN[0], self.CYAN[1], self.CYAN[2], 1.0)
-        else:
-            self._set_text(self.mode_value, "PINCH MODE")
-            self.mode_value["text_fg"] = Vec4(self.GOLD[0], self.GOLD[1], self.GOLD[2], 1.0)
-        if self.metro_on:
-            self._set_text(self.metro_value, "%d BPM" % self.tempo)
-            self.metro_value["text_fg"] = Vec4(self.GOLD[0], self.GOLD[1], self.GOLD[2], 1.0)
-        else:
-            self._set_text(self.metro_value, "OFF")
-            self.metro_value["text_fg"] = Vec4(self.GREY[0], self.GREY[1], self.GREY[2], 1.0)
+        if hasattr(self, "mode_value") and self.mode_value:
+            if air:
+                self._set_text(self.mode_value, "AIR MODE")
+                self.mode_value["text_fg"] = Vec4(self.CYAN[0], self.CYAN[1], self.CYAN[2], 1.0)
+            else:
+                self._set_text(self.mode_value, "PINCH MODE")
+                self.mode_value["text_fg"] = Vec4(self.GOLD[0], self.GOLD[1], self.GOLD[2], 1.0)
+        if hasattr(self, "metro_value") and self.metro_value:
+            if self.metro_on:
+                self._set_text(self.metro_value, "%d BPM" % self.tempo)
+                self.metro_value["text_fg"] = Vec4(self.GOLD[0], self.GOLD[1], self.GOLD[2], 1.0)
+            else:
+                self._set_text(self.metro_value, "OFF")
+                self.metro_value["text_fg"] = Vec4(self.GREY[0], self.GREY[1], self.GREY[2], 1.0)
 
         # left-panel how-to lines
         if air:
@@ -1383,18 +1482,21 @@ class Drums:
         if not self._visible:
             return task.cont
 
-        dt = ClockObject.getGlobalClock().getDt()
-        now = time.time()
+        try:
+            dt = ClockObject.getGlobalClock().getDt()
+            now = time.time()
 
-        for pad in self.PADS:
-            self._animate_pad(pad, now, dt)
+            for pad in self.PADS:
+                self._animate_pad(pad, now, dt)
 
-        for slot in self._slots.values():
-            if slot["flash"] > 0.0:
-                slot["flash"] = max(0.0, slot["flash"] - dt * 4.5)
-                self._style_cursor(slot)
+            for slot in self._slots.values():
+                if slot["flash"] > 0.0:
+                    slot["flash"] = max(0.0, slot["flash"] - dt * 4.5)
+                    self._style_cursor(slot)
 
-        self._animate_global(now)
+            self._animate_global(now)
+        except Exception as e:
+            pass
         return task.cont
 
     def _animate_pad(self, pad, now, dt):
@@ -1491,16 +1593,21 @@ class Drums:
             self._set_pad_idle(p)
 
     def _animate_global(self, now):
+        if not hasattr(self, "accent_bar") or self.accent_bar is None:
+            return
         f = max(0.0, 1.0 - (now - self.last_hit_time) / 0.7)
         if not self.fx_enabled:
             f = 0.0
-        if f > 0.0:
-            tint = _mix(self.CYAN, self.last_color, min(1.0, f * 1.4))
-            self.accent_bar.setColor(tint[0], tint[1], tint[2], 0.55 + 0.45 * f)
-            self._accent_active = True
-        elif self._accent_active:
-            self.accent_bar.setColor(self.CYAN[0], self.CYAN[1], self.CYAN[2], 0.70)
-            self._accent_active = False
+        try:
+            if f > 0.0:
+                tint = _mix(self.CYAN, self.last_color, min(1.0, f * 1.4))
+                self.accent_bar.setColor(tint[0], tint[1], tint[2], 0.55 + 0.45 * f)
+                self._accent_active = True
+            elif self._accent_active:
+                self.accent_bar.setColor(self.CYAN[0], self.CYAN[1], self.CYAN[2], 0.70)
+                self._accent_active = False
+        except Exception:
+            pass
 
     def _set_pad_idle(self, p):
         """Return one pad to its resting look."""
@@ -1684,6 +1791,8 @@ class Drums:
             s["hist"] = []
             s["rhist"] = []
             s["air_lock"] = None
+            s["ui_dwell_target"] = None
+            s["ui_dwell_start"] = 0.0
             s["since"] = -999.0
             s["pinched"] = False
             s["lock"] = True          # must be seen open before it may hit
@@ -1880,6 +1989,8 @@ class Drums:
             slot["hist"] = []
             slot["rhist"] = []
             slot["air_lock"] = None
+            slot["ui_dwell_target"] = None
+            slot["ui_dwell_start"] = 0.0
             slot["root"].hide()
             self._style_cursor(slot)
 
@@ -1902,13 +2013,18 @@ class Drums:
         rx = (lm[8].x - 0.5) * 2.0 * aspect * gain
         rz = (0.5 - lm[8].y) * 2.0 * gain
 
-        # light adaptive smoothing: steady when still, almost raw when fast
+        # light adaptive smoothing: steady when still, responsive when moving
         pos = slot["pos"]
         if pos is None:
             x, z = rx, rz
         else:
             speed = math.hypot(rx - pos[0], rz - pos[1])
-            a = min(0.95, self.SMOOTH_MIN + speed * self.SMOOTH_GAIN)
+            if speed > 0.08:
+                a = 0.92
+            elif speed > 0.02:
+                a = min(0.88, self.SMOOTH_MIN + speed * self.SMOOTH_GAIN * 0.4)
+            else:
+                a = self.SMOOTH_MIN
             x = pos[0] + (rx - pos[0]) * a
             z = pos[1] + (rz - pos[1]) * a
         slot["pos"] = (x, z)
@@ -1928,24 +2044,56 @@ class Drums:
 
         slot["hover"] = self._pad_at(x, z, slot["hover"])
 
+        # Hover Dwell selection for UI targets (works in AIR mode & PINCH mode)
+        ui_target = self._ui_target_at(x, z)
+        if ui_target is not None:
+            t_id = id(ui_target)
+            if slot.get("ui_dwell_target") != t_id:
+                slot["ui_dwell_target"] = t_id
+                slot["ui_dwell_start"] = now
+            elif self.play_mode == "AIR" and now - slot.get("ui_dwell_start", now) >= 0.38:
+                if now - self._last_ui_click >= self.UI_CLICK_COOLDOWN:
+                    self._last_ui_click = now
+                    slot["flash"] = 1.0
+                    slot["style_key"] = None
+                    if hasattr(self.sound_manager, "play_ui_click"):
+                        self.sound_manager.play_ui_click()
+                    ui_target["cmd"](*ui_target["args"])
+                    slot["ui_dwell_start"] = now + 999.0
+        else:
+            slot["ui_dwell_target"] = None
+            slot["ui_dwell_start"] = 0.0
+
         # pinch state machine (separate ON / OFF thresholds, own state per hand).
         # Runs in BOTH modes: PINCH mode plays drums with it, AIR mode only uses
         # it to press buttons.
         edge = False
         ratio = self._pinch_ratio(lm)
         if ratio is not None:
+            # Smooth pinch ratio for instant, responsive triggering
+            if slot.get("smooth_ratio") is None:
+                slot["smooth_ratio"] = ratio
+            else:
+                slot["smooth_ratio"] = 0.70 * ratio + 0.30 * slot["smooth_ratio"]
+            eff_ratio = slot["smooth_ratio"]
+
             if slot["pinched"]:
-                if ratio > self.PINCH_OFF:
+                if eff_ratio > self.PINCH_OFF:
                     slot["pinched"] = False
-            elif ratio < self.PINCH_ON:
+            elif eff_ratio < self.PINCH_ON:
                 if not slot["lock"]:
                     slot["pinched"] = True
                     edge = True
-            elif ratio > self.PINCH_OFF:
+            elif eff_ratio > self.PINCH_OFF:
                 slot["lock"] = False
 
         if edge:
-            if self.play_mode == "PINCH":
+            # If cursor is over any UI target or in upper console area, prioritize UI button click
+            if z > 0.65 or ui_target is not None:
+                if not self._ui_click(slot, now):
+                    if self.play_mode == "PINCH":
+                        self._try_hit(slot, now)
+            elif self.play_mode == "PINCH":
                 if not self._try_hit(slot, now):
                     self._ui_click(slot, now)
             else:
@@ -2011,6 +2159,24 @@ class Drums:
             if slot["air_lock"] is not None:
                 return
 
+        ui_t = self._ui_target_at(rx, rz)
+        if ui_t is not None:
+            rh = slot["rhist"]
+            for (t, px, pz) in rh:
+                dt = now - t
+                if dt > 0.25 or dt < self.AIR_MIN_DT:
+                    continue
+                down = pz - rz
+                if down >= 0.025 and (down / dt) >= 0.22:
+                    if now - self._last_ui_click >= self.UI_CLICK_COOLDOWN:
+                        self._last_ui_click = now
+                        slot["flash"] = 1.0
+                        slot["style_key"] = None
+                        if hasattr(self.sound_manager, "play_ui_click"):
+                            self.sound_manager.play_ui_click()
+                        ui_t["cmd"](*ui_t["args"])
+                        return
+
         if pad is None:
             return
         if now - slot["last_hit"] < self.AIR_COOLDOWN:
@@ -2073,19 +2239,34 @@ class Drums:
                 break
         return cur
 
+    def _ui_target_at(self, x, z):
+        if x is None or z is None:
+            return None
+        for t in self._ui_targets:
+            margin_w = max(0.045, t["hw"] * 0.45)
+            margin_h = max(0.038, t["hh"] * 0.85)
+            if abs(x - t["x"]) <= (t["hw"] + margin_w) and abs(z - t["z"]) <= (t["hh"] + margin_h):
+                return t
+        return None
+
     def _ui_click(self, slot, now):
-        """Pinch edge over one of this module's buttons = a mouse click on it."""
+        """Pinch or tap edge over one of this module's buttons = a click on it."""
         if slot["pos"] is None or now - self._last_ui_click < self.UI_CLICK_COOLDOWN:
             return False
         pts = [self._ui_point(slot, now), slot["pos"]]
+        target = None
         for (x, z) in pts:
-            for t in self._ui_targets:
-                if abs(x - t["x"]) <= t["hw"] + 0.01 and abs(z - t["z"]) <= t["hh"] + 0.01:
-                    self._last_ui_click = now
-                    slot["flash"] = 1.0
-                    slot["style_key"] = None
-                    t["cmd"](*t["args"])
-                    return True
+            target = self._ui_target_at(x, z)
+            if target is not None:
+                break
+        if target is not None:
+            self._last_ui_click = now
+            slot["flash"] = 1.0
+            slot["style_key"] = None
+            if hasattr(self.sound_manager, "play_ui_click"):
+                self.sound_manager.play_ui_click()
+            target["cmd"](*target["args"])
+            return True
         return False
 
     # ---- Stage 1 behaviour, kept behind LEGACY_POSE_MODE ----
@@ -2133,30 +2314,58 @@ class Drums:
         ):
             self._hit_pad(triggered_drum, now)
 
+    def _on_mouse_click(self):
+        """Allows direct clicking on any drum kit piece with the mouse."""
+        if not self._visible:
+            return
+        mw = getattr(self.base, "mouseWatcherNode", None)
+        if mw is None or not mw.hasMouse():
+            return
+        try:
+            m = mw.getMouse()
+            get_aspect = getattr(self.base, "getAspectRatio", None)
+            aspect = get_aspect() if get_aspect is not None else 16.0 / 9.0
+            mx = m.getX() * aspect
+            mz = m.getY()
+            pad = self._pad_at(mx, mz)
+            if pad:
+                self._hit_pad(pad, time.time())
+        except Exception:
+            pass
+
     def _hit_pad(self, drum_id, now):
-        """Single funnel for every drum hit (AIR, PINCH and legacy)."""
+        """Single funnel for every drum hit (AIR, PINCH, mouse and legacy)."""
         self.last_drum = drum_id
         self.last_time = now
         self.hit_timers[drum_id] = now
 
         # Play audio
         if hasattr(self.sound_manager, "play_drum"):
-            self.sound_manager.play_drum(drum_id)
+            try:
+                self.sound_manager.play_drum(drum_id)
+            except Exception as e:
+                print(f"[Drums] Audio playback error for {drum_id}:", e)
 
         # Visual feedback
-        pad_info = next((p for p in self.PADS if p["id"] == drum_id), None)
-        if pad_info:
-            self._on_visual_hit(pad_info, now)
+        try:
+            pad_info = next((p for p in self.PADS if p["id"] == drum_id), None)
+            if pad_info:
+                self._on_visual_hit(pad_info, now)
+        except Exception as e:
+            print(f"[Drums] Visual feedback error for {drum_id}:", e)
 
         # Beat counting + BPM
-        self.beat_count += 1
-        self.beat_times.append(now)
-        self.beat_times = [t for t in self.beat_times if now - t <= 10.0]
-        if len(self.beat_times) >= 2:
-            span = self.beat_times[-1] - self.beat_times[0]
-            if span > 0:
-                self.bpm = int((len(self.beat_times) - 1) / span * 60)
-        self._refresh_stats()
+        try:
+            self.beat_count += 1
+            self.beat_times.append(now)
+            self.beat_times = [t for t in self.beat_times if now - t <= 10.0]
+            if len(self.beat_times) >= 2:
+                span = self.beat_times[-1] - self.beat_times[0]
+                if span > 0:
+                    self.bpm = int((len(self.beat_times) - 1) / span * 60)
+            self._refresh_stats()
+        except Exception:
+            pass
 
     def _on_visual_hit(self, pad_info, now):
         pid = pad_info["id"]
@@ -2216,6 +2425,11 @@ class Drums:
 
     def cleanup(self):
         self._alive = False
+        try:
+            if hasattr(self.base, "ignore"):
+                self.base.ignore("mouse1")
+        except Exception:
+            pass
         try:
             self.base.taskMgr.remove("DrumsAnimation")
             self.base.taskMgr.remove("DrumsMetronome")

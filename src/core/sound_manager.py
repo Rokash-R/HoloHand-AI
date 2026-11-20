@@ -67,10 +67,13 @@ class SoundManager:
         self.sound_cache = {}
         self.piano_sounds = {}
         self.drum_sounds = {}
+        self.ui_click_sound = None
+        self.ui_hover_sound = None
 
         if self.audio_ready:
             self._create_all_piano_sounds()
             self._create_all_drum_sounds()
+            self._create_ui_sounds()
 
         print("Audio files: READY")
 
@@ -351,6 +354,51 @@ class SoundManager:
                 sound.play()
             except Exception as e:
                 print("Drum playback error:", e)
+
+    def _create_ui_sounds(self):
+        try:
+            sr = 44100
+            # Click sound: crisp futuristic chime (880Hz + 1320Hz + 1760Hz, 120ms)
+            dur_click = 0.12
+            n_click = int(sr * dur_click)
+            t_click = np.linspace(0, dur_click, n_click, endpoint=False)
+            click_wave = (
+                0.55 * np.sin(2 * np.pi * 880.0 * t_click) +
+                0.35 * np.sin(2 * np.pi * 1320.0 * t_click) +
+                0.15 * np.sin(2 * np.pi * 1760.0 * t_click)
+            ) * np.exp(-32.0 * t_click)
+            click_arr = np.int16(np.clip(click_wave * 26000, -32767, 32767))
+            stereo_click = np.ascontiguousarray(np.column_stack((click_arr, click_arr)))
+            self.ui_click_sound = pygame.sndarray.make_sound(stereo_click)
+
+            # Hover sound: soft subtle tick (1200Hz, 40ms)
+            dur_hover = 0.04
+            n_hover = int(sr * dur_hover)
+            t_hover = np.linspace(0, dur_hover, n_hover, endpoint=False)
+            hover_wave = 0.25 * np.sin(2 * np.pi * 1200.0 * t_hover) * np.exp(-75.0 * t_hover)
+            hover_arr = np.int16(np.clip(hover_wave * 18000, -32767, 32767))
+            stereo_hover = np.ascontiguousarray(np.column_stack((hover_arr, hover_arr)))
+            self.ui_hover_sound = pygame.sndarray.make_sound(stereo_hover)
+        except Exception as e:
+            print(f"UI sound init error: {e}")
+
+    def play_ui_click(self):
+        if not self.audio_ready or self.ui_click_sound is None:
+            return
+        try:
+            self.ui_click_sound.set_volume(self.master_volume * 0.95)
+            self.ui_click_sound.play()
+        except Exception:
+            pass
+
+    def play_ui_hover(self):
+        if not self.audio_ready or self.ui_hover_sound is None:
+            return
+        try:
+            self.ui_hover_sound.set_volume(self.master_volume * 0.40)
+            self.ui_hover_sound.play()
+        except Exception:
+            pass
 
     def stop_all(self):
         if self.audio_ready:
